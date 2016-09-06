@@ -1,4 +1,6 @@
-execfile('IDC_astro.py')
+# execfile('IDC_astro.py')
+
+from astro_idchiang.io import Surveys
 
 objects = ['NGC 3198']
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', \
@@ -8,6 +10,9 @@ MP2 = ['THINGS', 'HERACLES']
 MP1 = ['SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160', \
                 'PACS_100', 'HERACLES']
+                
+cmaps = Surveys(objects, all_surveys)
+
 """
 self = Compare_images(objects, all_surveys)
 self.add_kernel(all_kernels, 'SPIRE_500')
