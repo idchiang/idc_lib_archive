@@ -1,4 +1,4 @@
-execfile('IDC_astro.py')
+# execfile('IDC_astro.py')
 
 objects = ['NGC 3198']
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', \
