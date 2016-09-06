@@ -1,3 +1,4 @@
 *.gz
 *.FITS
 *.png
+*.h5
