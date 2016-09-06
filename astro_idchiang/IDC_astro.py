@@ -17,10 +17,6 @@ from scipy.interpolate import interp2d, griddata
 from scipy.optimize import minimize
 import emcee
 import h5py
-
-    ######################################
-    ######    Working here now!!    ######
-    ######################################   
 	
 # Defined global constants
 THINGS_objects = ['NGC 628', 'NGC 925', 'NGC 1569', 'NGC 2366', 'NGC 2403', 

@@ -12,10 +12,9 @@ fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160', \
                 'PACS_100', 'HERACLES']
                 
 cmaps = Surveys(objects, all_surveys)
+cmaps.add_kernel(all_kernels, 'SPIRE_500')
 
 """
-self = Compare_images(objects, all_surveys)
-self.add_kernel(all_kernels, 'SPIRE_500')
 self.matching_PSF_2step(objects, MP2, 'Gauss_25', 'SPIRE_500', False)
 self.matching_PSF_1step(objects, MP1, 'SPIRE_500', False)
 self.WCS_congrid(objects, fine_surveys, 'SPIRE_500', method = 'linear')

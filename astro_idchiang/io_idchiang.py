@@ -38,7 +38,7 @@ class Surveys(object):
         self.kernels = pd.DataFrame()
         
         this_dir, this_filename = os.path.split(__file__)
-        DATA_PATH = os.path.join(this_dir, "galaxy_data.csv")
+        DATA_PATH = os.path.join(this_dir, "data_table/galaxy_data.csv")
         self.galaxy_data = pd.read_csv(DATA_PATH)
         self.galaxy_data.index = self.galaxy_data.OBJECT.values
         
@@ -191,3 +191,55 @@ class Surveys(object):
                 print "Warning: " + name + " not in " + self.name + " csv database!!"
             except IOError:
                 print "Warning: " + filename + " doen't exist!!"
+				
+    def add_kernel(self, name1s, name2, FWHM1s = [], FWHM2 = None, \
+                   filenames = []):
+        """   
+        Inputs:
+            name1s: <list of str | str>
+                Name1's of kernels to be read.
+            name2: <str>
+                Name2 of kernels to be read.        
+            FWHM1s: <list of float | float>
+                FWHM1's of kernels to be read. (default [])
+            FWHM2: <float>
+                FWHM2 of kernels to be read. (default None)
+            filenames: <str>
+                Filenames of files to be read (default [])
+        """
+        name1s = [name1s] if type(name1s) == str else name1s
+        if not filenames:
+            for name1 in name1s:
+                filenames.append('Kernels/Kernel_LoRes_' + name1 + '_to_' + \
+                                 name2 + '.fits.gz')
+        FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, \
+                'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, \
+                'HERACLES': 13}
+        if not FWHM1s:
+            for name1 in name1s:
+                FWHM1s.append(FWHM[name1])
+        FWHM2 = FWHM[name2] if (not FWHM2) else FWHM2
+        assert len(filenames) == len(name1s)
+        assert len(FWHM1s) == len(name1s)            
+
+        print "Importing " + str(len(name1s)) + " kernel files..."
+        tic = clock()        
+        for i in xrange(len(name1s)):
+            s = pd.Series()
+            try:
+                s['KERNEL'], hdr = fits.getdata(filenames[i], 0, header = True)
+                s['KERNEL'] /= np.nansum(s['KERNEL'])
+                assert hdr['CD1_1'] == hdr['CD2_2']
+                assert hdr['CD1_2'] == hdr['CD2_1'] ==0
+                assert hdr['CD1_1'] % 2
+                s['PS'] = np.array([hdr['CD1_1'] * u.degree.to(u.arcsec),
+                                    hdr['CD2_2'] * u.degree.to(u.arcsec)])
+                s['FWHM1'], s['FWHM2'], s['NAME1'], s['NAME2'] = \
+                            FWHM1s[i], FWHM2, name1s[i], name2
+                s['REGRID'], s['PSR'] = np.zeros([1,1]), np.zeros([1,1])
+                self.kernels = self.kernels.append(s.to_frame().T.\
+                               set_index(['NAME1','NAME2']))
+            except IOError:
+                print "Warning: " + filenames[i] + " doesn't exist!!"
+        toc = clock()
+        print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
