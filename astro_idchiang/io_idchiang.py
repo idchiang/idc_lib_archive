@@ -7,6 +7,7 @@ from astropy import wcs
 from h5py import File
 from time import clock
 import regrid_idchiang as ric
+from dustfit_idchiang import fit_dust_density as fdd
 
 def read_h5(filename):
     """
@@ -307,3 +308,18 @@ class Surveys(object):
                 rgd_image = ric.WCS_congrid(self.df, name, fine_survey, \
                             course_survey, method)
                 self.df.set_value((name, fine_survey), 'RGD_MAP', rgd_image)
+                
+    def fit_dust_density(self, names, nwalkers = 10, nsteps = 200):
+        """
+        Inputs:
+            names: <list of str | str>
+                Object names to be calculated.
+            nwalkers: <int>
+                Number of 'walkers' in the mcmc algorithm
+            nsteps: <int>
+                Number of steps in the mcm algorithm
+        Outputs:
+        """
+        names = [names] if type(names)==str else names
+        for name in names:
+            fdd(self.df, name, nwalkers, nsteps)

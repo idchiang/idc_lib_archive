@@ -41,4 +41,4 @@ FUTURE TO DO:
 from functions_idchiang import *
 from io_idchiang import *
 from regrid_idchiang import *
-# from dustfit_idchiang import *
+from dustfit_idchiang import *
