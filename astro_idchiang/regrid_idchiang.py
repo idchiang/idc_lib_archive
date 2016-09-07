@@ -1,245 +1,205 @@
-import os
 import numpy as np
-import pandas as pd
-import astropy.units as u
-from astropy.io import fits
-from astropy import wcs
-from h5py import File
+from scipy.interpolate import interp2d, griddata
+from astropy.convolution import convolve_fft
 from time import clock
+from functions_idchiang import reasonably_close, Gaussian_Kernel_C1
 
-def read_h5(filename):
+def Kernel_regrid(kernels, ps_new, name1, name2, target_name = None, \
+                  method = 'cubic'):
     """
     Inputs:
-        filename: <str>
-		    Filename of the file to be read.
-	Outputs:
-	    d: <dict>
-	        Dictionary with {keys, values} as described in the input file. 
+        kernels: <pandas DataFrame>
+            A DataFrame storaging kernel data and information
+        ps_new: <list of float>
+            Target pixel scale.
+        name1, name2: <str>
+            Survey names corresponds to the Kernel needs to be regridded.
+        target_name: <str>
+            Name of target image. Will be set to name1 one if not entered.
+        method: <str>
+            Interpolate method. 'linear', 'cubic', 'quintic'
+    Outputs:
+        n_kernel: <numpy array>
+            The regridded kernel array.
     """
-    with File('filename', 'r') as hf:
-        d = {}
-        for key in hf.keys():
-            d[key] = np.array(hf.get(key))
-	return d
-
-class Surveys(object):
-    """ Storaging maps, properties, kernels. """
-    def __init__(self, names, surveys, auto_import = True):
+    try:
+        # Grabbing data
+        kernel = kernels.loc[name1, name2].KERNEL
+        ps = kernels.loc[name1, name2].PS
+        if not target_name:
+            target_name = name1
         """
-        Inputs:
-            names: <list of str | str>
-		        Names of objects to be read.
-            surveys: <list of str | str>
-		        Names of surveys to be read.
-            auto_import: <bool>
-                Set if we want to import survey maps automatically (default True)			
+        ps_new = df.xs(target_name, level = 1).PS.values[0]
         """
-        self.df = pd.DataFrame()
-        self.kernels = pd.DataFrame()
-        
-        this_dir, this_filename = os.path.split(__file__)
-        DATA_PATH = os.path.join(this_dir, "galaxy_data.csv")
-        self.galaxy_data = pd.read_csv(DATA_PATH)
-        self.galaxy_data.index = self.galaxy_data.OBJECT.values
-        
-        if auto_import:
-            print "Importing " + str(len(names)*len(surveys)) + " fits files..."        
-            tic = clock()
-            self.add_galaxies(names, surveys)
-            # self.df.index.names = ['Name', 'Survey']
-            toc = clock()
-            print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
                 
-    def add_galaxies(self, names, surveys, filenames = None):
-        """   
-        Inputs:
-            names: <list of str | str>
-		        Names of objects to be read.
-            surveys: <list of str | str>
-		        Names of surveys to be read.
-            filenames: <list of str | str>
-                Filenames of files to be read (default None)	
-        """
-        names = [names] if type(names) == str else names
-        surveys = [surveys] if type(surveys) == str else surveys
-        if filenames:
-            filenames = [filenames]
-            assert len(names) == len(surveys) == len(filenames), "Input lengths are not equal!!"
-            for i in xrange(len(filenames)):
-                print "Warning: BMAJ, BMIN, BPA not supported now!!"
-                self.add_galaxy(names[i], surveys[i], filenames[i])
-        else:
-            for survey in surveys:
-                if survey == 'THINGS':
-                    self.galaxy_data['BMAJ'] = self.galaxy_data['TBMAJ'].copy()            
-                    self.galaxy_data['BMIN'] = self.galaxy_data['TBMIN'].copy()     
-                    self.galaxy_data['BPA'] = self.galaxy_data['TBPA'].copy()
-                elif survey == 'HERACLES':
-                    self.galaxy_data['BMAJ'] = [13.0] * len(self.galaxy_data)            
-                    self.galaxy_data['BMIN'] = [13.0] * len(self.galaxy_data)            
-                    self.galaxy_data['BPA'] = [0.0] * len(self.galaxy_data)            
-                else:
-                    self.galaxy_data['BMAJ'] = [1.0] * len(self.galaxy_data)            
-                    self.galaxy_data['BMIN'] = [1.0] * len(self.galaxy_data)            
-                    self.galaxy_data['BPA'] = [0.0] * len(self.galaxy_data)     
-                for name in names:
-					self.add_galaxy(name, survey) 
-		
-    def add_galaxy(self, name, survey, filename = None):
-        """   
-        Inputs:
-            name: <str>
-		        Name of object to be read.
-            survey: <str>
-		        Name of survey to be read.
-            filename: <str>
-                Filename of file to be read (default None)
-        """
-        continuing = True
+        # Check if the kernel is squared / odd pixel
+        assert kernel.shape[0] == kernel.shape[1]
+        assert len(kernel) % 2
         
-        for i in xrange(len(name)):
-            if name[i] in [' ', '_', '0']:
-                name1 = name[:i]
-                name2 = name[i+1:]
-                break
-            elif name[i] in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
-                name1 = name[:i]
-                name2 = name[i:]
-                break
-        name = name1.upper() + ' ' + name2
+        # Generating grid points. Ref Anaino total dimension ~729", half 364.5"
+        l = (len(kernel)-1)//2        
+        x = np.arange(-l, l+1) * ps[0] / ps_new[0]
+        y = np.arange(-l, l+1) * ps[1] / ps_new[1]
+        lxn, lyn = int(l * ps[0] / ps_new[0]), int(l * ps[1] / ps_new[1])
+        xn, yn = np.arange(-lxn, lxn+1), np.arange(-lyn, lyn+1)
 
-        if survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250', 'PACS_160',\
-                         'PACS_100', 'HERACLES']:
-            if name1.upper() == 'NGC' and len(name2) == 3:
-                name2 = '0' + name2
-        
-        if not filename:
-            if survey == 'THINGS':
-                filename = 'data/THINGS/' + name1 + '_' + name2 + '_NA_MOM0_THINGS.FITS'
-            elif survey == 'SPIRE_500':
-                filename = 'data/SPIRE/' + name1 + '_' + name2 + '_I_500um_hipe_k2011.fits.gz'
-            elif survey == 'SPIRE_350':
-                filename = 'data/SPIRE/' + name1 + '_' + name2 + '_I_350um_hipe_k2011.fits.gz'
-            elif survey == 'SPIRE_250':
-                filename = 'data/SPIRE/' + name1 + '_' + name2 + '_I_250um_hipe_k2011.fits.gz'
-            elif survey == 'PACS_160':
-                filename = 'data/PACS/' + name1 + '_' + name2 + '_I_160um_k2011.fits.gz'
-            elif survey == 'PACS_100':
-                filename = 'data/PACS/' + name1 + '_' + name2 + '_I_100um_k2011.fits.gz'
-            elif survey == 'HERACLES': 
-                filename = 'data/HERACLES/' + name1.lower() + name2 + '_heracles_mom0.fits.gz'
-            else:
-                continuing = False
-                print "Warning: Survey not supported yet!! Please check or enter file name directly."
-
-        if continuing:
-            try:
-                s = self.galaxy_data.loc[name].copy()
-                del s['TBMIN'], s['TBMAJ'], s['TBPA']
-                data, hdr = fits.getdata(filename,0, header=True)
-
-                if survey == 'THINGS':
-                    # THINGS: Raw data in JY/B*M. Change to
-                    # column density 1/cm^2    
-                    data = data[0,0]
-                    data *= 1.823E18 * 6.07E5 / 1.0E3 / s.BMAJ / s.BMIN                
-                elif survey == 'HERACLES':
-                    # HERACLES: Raw data in K*km/s. Change to
-                    # column density 1/cm^2
-                    # This is a calculated parameter by fitting HI to H2 mass
-                    R21 = 0.8
-                    XCO = 2.0E20
-                    data *= XCO * (R21/0.8)
-                else:
-                    if survey in ['PACS_160', 'PACS_100']:
-                        data = data[0]
-                    # print survey + " not supported for density calculation!!"
-
-                w = wcs.WCS(hdr, naxis=2)
-                # add the generated data to dataframe
-                s['WCS'], s['MAP'], s['L'] = w, data, np.array(data.shape)
-                ctr = s.L // 2
-                ps = np.zeros(2)
-                xs, ys = w.wcs_pix2world([ctr[0]-1, ctr[0]+1, ctr[0], ctr[0]],
-                                         [ctr[1], ctr[1], ctr[1]-1, ctr[1]+1], 1)
-                ps[0] = np.abs(xs[0]-xs[1])/2*np.cos((ys[0]+ys[1])*np.pi/2/180)
-                ps[1] = np.abs(ys[3]-ys[2])/2
-                ps *= u.degree.to(u.arcsec)
-                if survey in ['PACS_160', 'PACS_100']:
-                    # Converting Jy/pixel to MJy/sr
-                    data *= (np.pi/36/18)**(-2) / ps[0] / ps[1]
-                s['PS'] = ps
-                s['CVL_MAP'] = np.zeros([1,1])
-                s['RGD_MAP'] = np.zeros([1,1])
-                s['CAL_MASS'] = np.zeros([1,1])
-                s['DP_RADIUS'] = np.zeros([1,1])
-                s['RVR'] = np.zeros([1,1])
-                """
-                if cal:
-                    print "Calculating " + name + "..."
-                    s['CAL_MASS'] = self.total_mass(s)
-                    s['DP_RADIUS'] = self.dp_radius(s)
-                    s['RVR'] = self.Radial_prof(s)
-                else:
-                    s['CAL_MASS'] = np.zeros([1,1])
-                    s['DP_RADIUS'] = np.zeros([1,1])
-                    s['RVR'] = np.zeros([1,1])
-                """
-                # Update DataFrame
-                self.df = self.df.append(s.to_frame().T.set_index([[name],[survey]]))
-            except KeyError:
-                print "Warning: " + name + " not in " + self.name + " csv database!!"
-            except IOError:
-                print "Warning: " + filename + " doen't exist!!"
-				
-    def add_kernel(self, name1s, name2, FWHM1s = [], FWHM2 = None, \
-                   filenames = []):
-        """   
-        Inputs:
-            name1s: <list of str | str>
-                Name1's of kernels to be read.
-            name2: <str>
-                Name2 of kernels to be read.        
-            FWHM1s: <list of float | float>
-                FWHM1's of kernels to be read. (default [])
-            FWHM2: <float>
-                FWHM2 of kernels to be read. (default None)
-            filenames: <str>
-                Filenames of files to be read (default [])
+        print "Start regridding \"" + name1 + " to " + name2 + \
+              "\" kernel to match " + target_name + " map..."
+        tic = clock()
+        k = interp2d(x, y, kernel, kind = method, fill_value=np.nan)
+        n_kernel = k(xn, yn)
+        n_kernel /= np.sum(n_kernel)
         """
-        name1s = [name1s] if type(name1s) == str else name1s
-        if not filenames:
-            for name1 in name1s:
-                filenames.append('Kernels/Kernel_LoRes_' + name1 + '_to_' + \
-                                 name2 + '.fits.gz')
-        FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, \
-                'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, \
-                'HERACLES': 13}
-        if not FWHM1s:
-            for name1 in name1s:
-                FWHM1s.append(FWHM[name1])
-        FWHM2 = FWHM[name2] if (not FWHM2) else FWHM2
-        assert len(filenames) == len(name1s)
-        assert len(FWHM1s) == len(name1s)            
-
-        print "Importing " + str(len(name1s)) + " kernel files..."
-        tic = clock()        
-        for i in xrange(len(name1s)):
-            s = pd.Series()
-            try:
-                s['KERNEL'], hdr = fits.getdata(filenames[i], 0, header = True)
-                s['KERNEL'] /= np.nansum(s['KERNEL'])
-                assert hdr['CD1_1'] == hdr['CD2_2']
-                assert hdr['CD1_2'] == hdr['CD2_1'] ==0
-                assert hdr['CD1_1'] % 2
-                s['PS'] = np.array([hdr['CD1_1'] * u.degree.to(u.arcsec),
-                                    hdr['CD2_2'] * u.degree.to(u.arcsec)])
-                s['FWHM1'], s['FWHM2'], s['NAME1'], s['NAME2'] = \
-                            FWHM1s[i], FWHM2, name1s[i], name2
-                s['REGRID'], s['PSR'] = np.zeros([1,1]), np.zeros([1,1])
-                self.kernels = self.kernels.append(s.to_frame().T.\
-                               set_index(['NAME1','NAME2']))
-            except IOError:
-                print "Warning: " + filenames[i] + " doesn't exist!!"
+        self.kernels.set_value((name1, name2), 'REGRID', n_kernel)
+        self.kernels.set_value((name1, name2), 'PSR', ps_new)
+        """
         toc = clock()
         print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+        print "Kernel sum: " + str(np.sum(n_kernel))
+        return n_kernel
+            
+    except KeyError:
+        print "Warning: kernel or target does not exist."
+
+def matching_PSF_1step(df, kernels, name, survey1, survey2):
+    """
+    Inputs:
+        df: <pandas DataFrame>
+            DataFrame contains map information
+        kernels: <pandas DataFrame>
+            DataFrame contains kernel information
+        name, survey1: <str>
+            Object name and survey name to be convolved.
+        survey2: <str>
+            Name of target PSF.
+    Outputs:
+        image1_2: <numpy array>
+            Convolved image
+        ps: <numpy array>
+            New pixel scale of kernel
+        kernel: <numpy array>
+            Regridded kernel
+    """
+    ## Grabbing information
+    ps = df.xs(survey1, level = 1).PS.values[0]
+    ps2 = kernels.loc[survey1, survey2].PS
+    if reasonably_close(ps, ps2, 2.0):
+        kernel = kernels.loc[survey1, survey2].KERNEL
+    else:
+        ps2 = kernels.loc[survey1, survey2].RGDPS
+        if reasonably_close(ps, ps2, 2.0):
+            kernel = kernels.loc[survey1, survey2].RGDKERNEL
+        else:
+            ps2 = ps
+            kernel = Kernel_regrid(kernels, ps, survey1, survey2)
+
+    image1 = df.loc[name, survey1].MAP
+    print "Convolving " + name + " " + survey1 + " map (1/1)..."
+    tic = clock()
+    image1_2 = convolve_fft(image1, kernel)
+    image1_2[np.isnan(image1)] = np.nan
+    toc = clock()
+    print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+    f1, f2 = np.nansum(image1), np.nansum(image1_2)
+    print "Normalized flux variation:  " + str(np.abs(f1-f2)/f1)
+    return image1_2, ps, kernel
+
+def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
+    """
+    Inputs:
+        df: <pandas DataFrame>
+            DataFrame contains map information
+        kernels: <pandas DataFrame>
+            DataFrame contains kernel information
+        name, survey1: <str>
+            Object name and survey name to be convolved.
+        k2_survey1, k2_survey2: <str>
+            Names of second kernel.
+    Outputs:
+        image1_2: <numpy array>
+            Convolved image
+        ps2: <numpy array>
+            New pixel scale of kernel
+        kernel2: <numpy array>
+            Regridded kernel
+    """
+    ps = df.xs(survey1, level = 1).PS.values[0]
+    ps2 = kernels.loc[k2_survey1, k2_survey2].PS
+    if reasonably_close(ps, ps2, 2.0):
+        kernel2 = kernels.loc[k2_survey1, k2_survey2].KERNEL
+    else:
+        ps2 = kernels.loc[k2_survey1, k2_survey2].RGDPS
+        if reasonably_close(ps, ps2, 2.0):
+            kernel2 = kernels.loc[k2_survey1, k2_survey2].RGDKERNEL
+        else:
+            ps2 = ps
+            kernel2 = Kernel_regrid(kernels, ps, k2_survey1, k2_survey2)   
+
+    bpa = df.loc[name, survey1].BPA
+    bmaj = df.loc[name, survey1].BMAJ
+    bmin = df.loc[name, survey1].BMIN
+    image1 = df.loc[name, survey1].MAP
+    FWHM2 = kernels.loc[k2_survey1, k2_survey2].FWHM1
+
+    print "Convolving " + name + " " + survey1 + " map (1/2)..."
+    tic = clock()
+    kernel1 = Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM2)
+    image1_1 = convolve_fft(image1, kernel1)
+    image1_1[np.isnan(image1)] = np.nan
+    toc = clock()
+    print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+    print "Convolving " + name + " " + survey1 + " map (2/2)..."
+    tic = clock()
+    image1_2 = convolve_fft(image1_1, kernel2)
+    image1_2[np.isnan(image1)] = np.nan
+    toc = clock()
+    print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+    f1, f2, f3 = np.nansum(image1), np.nansum(image1_1), np.nansum(image1_2)
+    print "Normalized flux variation. first step:  " + str(np.abs(f1-f2)/f1)
+    print "                           second step: " + str(np.abs(f2-f3)/f2)
+    print "                           overall:     " + str(np.abs(f1-f3)/f1)
+    return image1_2, ps2, kernel2
+
+def WCS_congrid(df, name, fine_survey, course_survey, method = 'linear'):
+    """
+    Inputs:
+        df: <pandas DataFrame>
+            DataFrame contains map information
+        name, fine_survey: <str>
+            Object name and fine survey name to be regrdidded.
+        course_survey: <str>
+            Course survey name to be regridded.
+        method: <str>
+            Fitting method. 'linear', 'nearest', 'cubic'
+    Outputs:
+        image1_1: <numpy array>
+            Regridded image
+    """
+    value = df.loc[name, fine_survey].CVL_MAP
+    if len(value) == 1:
+        print name + " " + fine_survey + " map has not been \
+              convolved. Please convolve first."
+        pass
+    else:
+        print "Start matching " + name + " " + fine_survey + \
+              " grid to match " + course_survey + "..."
+        tic = clock()
+        w1 = df.loc[name, fine_survey].WCS
+        naxis12, naxis11 = df.loc[name, fine_survey].L   # RA, Dec
+        w2 = df.loc[name, course_survey].WCS
+        naxis22, naxis21 = df.loc[name, course_survey].L # RA, Dec
+
+        xg, yg = np.meshgrid(np.arange(naxis11), np.arange(naxis12))
+        xwg, ywg = w1.wcs_pix2world(xg, yg, 1)
+        xg, yg = w2.wcs_world2pix(xwg, ywg, 1)
+        xng, yng = np.meshgrid(np.arange(naxis21), np.arange(naxis22))
+        
+        assert np.size(value) == np.size(xg) == np.size(yg)
+        s = np.size(value)
+        value = value.reshape(s)
+        points = np.concatenate((xg.reshape(s,1),yg.reshape(s,1)),axis=1)
+
+        image1_1 = griddata(points, value, (xng, yng), method = method)
+        toc = clock()
+        print "Done. Elapsed time: " + str(round(toc - tic, 3)) + " s."
+        return image1_1

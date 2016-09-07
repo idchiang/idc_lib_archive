@@ -6,6 +6,7 @@ from astropy.io import fits
 from astropy import wcs
 from h5py import File
 from time import clock
+import regrid_idchiang as ric
 
 def read_h5(filename):
     """
@@ -210,8 +211,8 @@ class Surveys(object):
         name1s = [name1s] if type(name1s) == str else name1s
         if not filenames:
             for name1 in name1s:
-                filenames.append('Kernels/Kernel_LoRes_' + name1 + '_to_' + \
-                                 name2 + '.fits.gz')
+                filenames.append('data/Kernels/Kernel_LoRes_' + name1 + \
+                                 '_to_' + name2 + '.fits.gz')
         FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, \
                 'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, \
                 'HERACLES': 13}
@@ -236,10 +237,73 @@ class Surveys(object):
                                     hdr['CD2_2'] * u.degree.to(u.arcsec)])
                 s['FWHM1'], s['FWHM2'], s['NAME1'], s['NAME2'] = \
                             FWHM1s[i], FWHM2, name1s[i], name2
-                s['REGRID'], s['PSR'] = np.zeros([1,1]), np.zeros([1,1])
+                s['RGDKERNEL'], s['RGDPS'] = np.zeros([1,1]), np.zeros(2)
                 self.kernels = self.kernels.append(s.to_frame().T.\
                                set_index(['NAME1','NAME2']))
             except IOError:
                 print "Warning: " + filenames[i] + " doesn't exist!!"
         toc = clock()
         print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+        
+    def matching_PSF_1step(self, names, survey1s, survey2):
+        """
+        Inputs:
+            names, survey1s: <str>
+                Object names and survey names to be convolved.
+            survey2: <str>
+                Name of target PSF.
+        """
+        names = [names] if type(names)==str else names
+        survey1s = [survey1s] if type(survey1s)==str else survey1s
+        for survey1 in survey1s:
+            for name in names:
+                cvl_image, new_ps, new_kernel = ric.matching_PSF_1step(\
+                                self.df, self.kernels, name, survey1, survey2)
+                self.df.set_value((name, survey1), 'CVL_MAP', cvl_image)
+                self.kernels.set_value((survey1, survey2), 'RGDKERNEL'\
+                                , new_kernel)
+                self.kernels.set_value((survey1, survey2), 'RGDPS'\
+                                , new_ps)
+                                
+    def matching_PSF_2step(self, names, survey1s, k2_survey1, k2_survey2):
+        """
+        Inputs:
+            names: <list of str | str>
+                Object names to be convolved.
+            survey1s: <list of str | str>
+                Survey names to be convolved.
+            k2_survey1, k2_survey2: <str>
+                Names of second kernel.
+        """
+        names = [names] if type(names)==str else names
+        survey1s = [survey1s] if type(survey1s)==str else survey1s
+        for survey1 in survey1s:
+            for name in names:
+                cvl_image, new_ps, new_kernel = ric.matching_PSF_2step(\
+                        self.df, self.kernels, name, survey1, k2_survey1, \
+                        k2_survey2)
+                self.df.set_value((name, survey1), 'CVL_MAP', cvl_image)
+                self.kernels.set_value((k2_survey1, k2_survey2), 'RGDKERNEL'\
+                                , new_kernel)
+                self.kernels.set_value((k2_survey1, k2_survey2), 'RGDPS'\
+                                , new_ps)
+            
+    def WCS_congrid(self, names, fine_surveys, course_survey, \
+                    method = 'linear'):
+        """
+        Inputs:
+            names, fine_surveys: <list of str | str>
+                Object names and fine survey names to be regrdidded.
+            course_survey: <str>
+                Course survey name to be regridded.
+            method: <str>
+                Fitting method. 'linear', 'nearest', 'cubic'
+        """
+        names = [names] if type(names)==str else names
+        fine_surveys = [fine_surveys] if type(fine_surveys)==str \
+                       else fine_surveys
+        for fine_survey in fine_surveys:
+            for name in names:
+                rgd_image = ric.WCS_congrid(self.df, name, fine_survey, \
+                            course_survey, method)
+                self.df.set_value((name, fine_survey), 'RGD_MAP', rgd_image)

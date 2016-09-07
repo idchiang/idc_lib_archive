@@ -58,4 +58,4 @@ def Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM=25.0):
     return result / np.sum(result)
     
 def reasonably_close(a, b, pct_err):
-    return (np.abs(a-b)/float(a)) < (pct_err/100.0)
+    return np.sqrt(np.sum((a-b)**2)/np.sum(a**2)) < (pct_err/100.0)
