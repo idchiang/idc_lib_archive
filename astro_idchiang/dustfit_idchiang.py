@@ -78,6 +78,7 @@ def fit_dust_density(df, name, nwalkers = 10, nsteps = 200):
     things = df.loc[(name, 'THINGS')].RGD_MAP
 
     # Cutting off the nan region of THINGS map.
+    # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
     axissum = [0]*2
     lc = np.zeros([2,2], dtype=int)
     for i in xrange(2):
@@ -108,16 +109,17 @@ def fit_dust_density(df, name, nwalkers = 10, nsteps = 200):
     # Using the variance of non-galaxy region as uncertainty
     for i in xrange(5):
         inv_glxmask2 = ~(np.isnan(sed[:,:,i]) + glxmask)
-        bkgerr[i] = np.std(sed[inv_glxmask2,i])
+        temp = sed[inv_glxmask2,i]
+        assert np.abs(np.mean(temp)) < np.max(temp)/10.0
+        temp = temp[np.abs(temp) < (3.0*np.std(temp))]
+        bkgerr[i] = np.std(temp)
 
-    # Using MAD as another method for checking uncertainty
-    """
-    def reject_outliers(data, sig=2.):
-        d = np.abs(data - np.median(data))    # get abs distances to the median
-        mad = np.median(d)                   # the median of the devs from the median
-        s = d/mad if mad else 0.            # % each deviation is of median dev
-        return data[s < sig]                  # want data where this % < n "stdevs"
-    """
+    # Build a mask which only keeps region larger than sig*bkgerr
+    sig = 1.0
+    bkgmask = 1.0 
+    for i in xrange(5):
+        bkgmask *= sed[:,:,i] > (sig*bkgerr[i])
+
             
     # Random sampling for [i,j] with high SNR
     # i, j = 95, 86  # NGC 3198
@@ -125,8 +127,7 @@ def fit_dust_density(df, name, nwalkers = 10, nsteps = 200):
     while(True):
         i = np.random.randint(0,things.shape[0])
         j = np.random.randint(0,things.shape[1])
-        cnt = np.sum(sed[i,j,:]>3*(bkgerr)) + diskmask[i, j]
-        if cnt == 6:
+        if diskmask[i, j]*bkgmask[i,j]:
             print '[i,j] = ['+str(i)+','+str(j)+']'
             break
     """
@@ -146,6 +147,7 @@ def fit_dust_density(df, name, nwalkers = 10, nsteps = 200):
                     sampler.run_mcmc(pos, nsteps)
                         
                     temp = sampler.chain[:,nsteps//2:,:].reshape(-1,ndim)
+                    # sampler.chain in shape (nwalkers, nsteps, ndim)
                     del sampler
                     popt[i,j] = np.mean(temp, axis = 0)
                     perr[i,j] = np.std(temp, axis = 0)
@@ -185,3 +187,27 @@ def fit_dust_density(df, name, nwalkers = 10, nsteps = 200):
     with h5py.File('outputs/dust_data.h5', 'a') as hf:
         hf.create_dataset(name+'_popt', data=popt)
         hf.create_dataset(name+'_perr', data=perr)
+        
+"""
+def reject_outliers(data, sig=2.):
+    data = data[~np.isnan(data)]
+    plt.figure()
+    stdev = np.std(data)
+    print stdev
+    mean = np.mean(data)
+    data_temp = data[np.abs(data-mean) < (sig * stdev)]
+    plt.subplot(131)
+    plt.hist(data_temp, bins=50)
+    err1 = np.std(data_temp)
+    
+    d = np.abs(data - np.median(data))
+    plt.subplot(132)
+    plt.hist(d, bins=50)
+    mad = np.median(d)
+    print mad
+    data_temp = data[d < sig * mad]
+    plt.subplot(133)
+    plt.hist(data_temp, bins=50)
+    err2 = np.std(data_temp)
+    print err1, err2
+"""
