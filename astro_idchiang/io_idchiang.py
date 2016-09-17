@@ -1,3 +1,6 @@
+from __future__ import absolute_import, division, print_function, \
+                       unicode_literals
+range = xrange
 import os
 import numpy as np
 import pandas as pd
@@ -6,8 +9,8 @@ from astropy.io import fits
 from astropy import wcs
 from h5py import File
 from time import clock
-import regrid_idchiang as ric
-from dustfit_idchiang import fit_dust_density as fdd
+from .dustfit_idchiang import fit_dust_density as fdd
+from . import regrid_idchiang as ric
 
 def read_h5(filename):
     """
@@ -26,7 +29,7 @@ def read_h5(filename):
 
 class Surveys(object):
     """ Storaging maps, properties, kernels. """
-    def __init__(self, names, surveys, auto_import = True):
+    def __init__(self, names, surveys, auto_import=True):
         """
         Inputs:
             names: <list of str | str>
@@ -45,14 +48,12 @@ class Surveys(object):
         self.galaxy_data.index = self.galaxy_data.OBJECT.values
         
         if auto_import:
-            print "Importing " + str(len(names)*len(surveys)) + " fits files..."        
+            print("Importing", len(names) * len(surveys), "fits files...")        
             tic = clock()
             self.add_galaxies(names, surveys)
-            # self.df.index.names = ['Name', 'Survey']
-            toc = clock()
-            print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+            print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
                 
-    def add_galaxies(self, names, surveys, filenames = None):
+    def add_galaxies(self, names, surveys, filenames=None):
         """   
         Inputs:
             names: <list of str | str>
@@ -66,9 +67,10 @@ class Surveys(object):
         surveys = [surveys] if type(surveys) == str else surveys
         if filenames:
             filenames = [filenames]
-            assert len(names) == len(surveys) == len(filenames), "Input lengths are not equal!!"
-            for i in xrange(len(filenames)):
-                print "Warning: BMAJ, BMIN, BPA not supported now!!"
+            assert len(names) == len(surveys) == len(filenames), \
+                   "Input lengths are not equal!!"
+            for i in range(len(filenames)):
+                print("Warning: BMAJ, BMIN, BPA not supported now!!")
                 self.add_galaxy(names[i], surveys[i], filenames[i])
         else:
             for survey in surveys:
@@ -87,7 +89,7 @@ class Surveys(object):
                 for name in names:
 					self.add_galaxy(name, survey) 
 		
-    def add_galaxy(self, name, survey, filename = None):
+    def add_galaxy(self, name, survey, filename=None):
         """   
         Inputs:
             name: <str>
@@ -99,51 +101,59 @@ class Surveys(object):
         """
         continuing = True
         
-        for i in xrange(len(name)):
-            if name[i] in [' ', '_', '0']:
+        for i in range(len(name)):
+            if name[i] in list(' _0'):
                 name1 = name[:i]
                 name2 = name[i+1:]
                 break
-            elif name[i] in ['1', '2', '3', '4', '5', '6', '7', '8', '9']:
+            elif name[i] in list('123456789'):
                 name1 = name[:i]
                 name2 = name[i:]
                 break
         name = name1.upper() + ' ' + name2
 
-        if survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250', 'PACS_160',\
-                         'PACS_100', 'HERACLES']:
+        if survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
+                      'PACS_100', 'HERACLES']:
             if name1.upper() == 'NGC' and len(name2) == 3:
                 name2 = '0' + name2
-        
+
         if not filename:
             if survey == 'THINGS':
-                filename = 'data/THINGS/' + name1 + '_' + name2 + '_NA_MOM0_THINGS.FITS'
+                filename = 'data/THINGS/' + name1 + '_' + name2 + \
+                           '_NA_MOM0_THINGS.FITS'
             elif survey == 'SPIRE_500':
-                filename = 'data/SPIRE/' + name1 + '_' + name2 + '_I_500um_hipe_k2011.fits.gz'
+                filename = 'data/SPIRE/' + name1 + '_' + name2 + \
+                           '_I_500um_scan_k2011.fits.gz'
             elif survey == 'SPIRE_350':
-                filename = 'data/SPIRE/' + name1 + '_' + name2 + '_I_350um_hipe_k2011.fits.gz'
+                filename = 'data/SPIRE/' + name1 + '_' + name2 + \
+                           '_I_350um_scan_k2011.fits.gz'
             elif survey == 'SPIRE_250':
-                filename = 'data/SPIRE/' + name1 + '_' + name2 + '_I_250um_hipe_k2011.fits.gz'
+                filename = 'data/SPIRE/' + name1 + '_' + name2 + \
+                           '_I_250um_scan_k2011.fits.gz'
             elif survey == 'PACS_160':
-                filename = 'data/PACS/' + name1 + '_' + name2 + '_I_160um_k2011.fits.gz'
+                filename = 'data/PACS/' + name1 + '_' + name2 + \
+                           '_I_160um_k2011.fits.gz'
             elif survey == 'PACS_100':
-                filename = 'data/PACS/' + name1 + '_' + name2 + '_I_100um_k2011.fits.gz'
+                filename = 'data/PACS/' + name1 + '_' + name2 + \
+                           '_I_100um_k2011.fits.gz'
             elif survey == 'HERACLES': 
-                filename = 'data/HERACLES/' + name1.lower() + name2 + '_heracles_mom0.fits.gz'
+                filename = 'data/HERACLES/' + name1.lower() + name2 + \
+                           '_heracles_mom0.fits.gz'
             else:
                 continuing = False
-                print "Warning: Survey not supported yet!! Please check or enter file name directly."
+                print("Warning: Survey not supported yet!!", 
+                      "Please check or enter file name directly.")
 
         if continuing:
             try:
                 s = self.galaxy_data.loc[name].copy()
                 del s['TBMIN'], s['TBMAJ'], s['TBPA']
-                data, hdr = fits.getdata(filename,0, header=True)
+                data, hdr = fits.getdata(filename, 0, header=True)
 
                 if survey == 'THINGS':
                     # THINGS: Raw data in JY/B*M. Change to
                     # column density 1/cm^2    
-                    data = data[0,0]
+                    data = data[0, 0]
                     data *= 1.823E18 * 6.07E5 / 1.0E3 / s.BMAJ / s.BMIN                
                 elif survey == 'HERACLES':
                     # HERACLES: Raw data in K*km/s. Change to
@@ -151,7 +161,7 @@ class Surveys(object):
                     # This is a calculated parameter by fitting HI to H2 mass
                     R21 = 0.8
                     XCO = 2.0E20
-                    data *= XCO * (R21/0.8)
+                    data *= XCO * (R21 / 0.8)
                 else:
                     if survey in ['PACS_160', 'PACS_100']:
                         data = data[0]
@@ -162,20 +172,23 @@ class Surveys(object):
                 s['WCS'], s['MAP'], s['L'] = w, data, np.array(data.shape)
                 ctr = s.L // 2
                 ps = np.zeros(2)
-                xs, ys = w.wcs_pix2world([ctr[0]-1, ctr[0]+1, ctr[0], ctr[0]],
-                                         [ctr[1], ctr[1], ctr[1]-1, ctr[1]+1], 1)
-                ps[0] = np.abs(xs[0]-xs[1])/2*np.cos((ys[0]+ys[1])*np.pi/2/180)
-                ps[1] = np.abs(ys[3]-ys[2])/2
+                xs, ys = \
+                    w.wcs_pix2world([ctr[0] - 1, ctr[0] + 1, ctr[0], ctr[0]],
+                                    [ctr[1], ctr[1], ctr[1] - 1, ctr[1] + 1], 
+                                    1)
+                ps[0] = np.abs(xs[0] - xs[1]) / 2 * \
+                        np.cos((ys[0] + ys[1]) * np.pi / 2 / 180)
+                ps[1] = np.abs(ys[3] - ys[2]) / 2
                 ps *= u.degree.to(u.arcsec)
                 if survey in ['PACS_160', 'PACS_100']:
                     # Converting Jy/pixel to MJy/sr
-                    data *= (np.pi/36/18)**(-2) / ps[0] / ps[1]
+                    data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
                 s['PS'] = ps
-                s['CVL_MAP'] = np.zeros([1,1])
-                s['RGD_MAP'] = np.zeros([1,1])
-                s['CAL_MASS'] = np.zeros([1,1])
-                s['DP_RADIUS'] = np.zeros([1,1])
-                s['RVR'] = np.zeros([1,1])
+                s['CVL_MAP'] = np.zeros([1, 1])
+                s['RGD_MAP'] = np.zeros([1, 1])
+                s['CAL_MASS'] = np.zeros([1, 1])
+                s['DP_RADIUS'] = np.zeros([1, 1])
+                s['RVR'] = np.zeros([1, 1])
                 """
                 if cal:
                     print "Calculating " + name + "..."
@@ -188,14 +201,14 @@ class Surveys(object):
                     s['RVR'] = np.zeros([1,1])
                 """
                 # Update DataFrame
-                self.df = self.df.append(s.to_frame().T.set_index([[name],[survey]]))
+                self.df = \
+                    self.df.append(s.to_frame().T.set_index([[name],[survey]]))
             except KeyError:
-                print "Warning: " + name + " not in " + self.name + " csv database!!"
+                print("Warning:", name, "not in", self.name ,"csv database!!")
             except IOError:
-                print "Warning: " + filename + " doen't exist!!"
+                print("Warning:", filename ,"doesn't exist!!")
 				
-    def add_kernel(self, name1s, name2, FWHM1s = [], FWHM2 = None, \
-                   filenames = []):
+    def add_kernel(self, name1s, name2, FWHM1s=[], FWHM2=None, filenames=[]):
         """   
         Inputs:
             name1s: <list of str | str>
@@ -212,10 +225,10 @@ class Surveys(object):
         name1s = [name1s] if type(name1s) == str else name1s
         if not filenames:
             for name1 in name1s:
-                filenames.append('data/Kernels/Kernel_LoRes_' + name1 + \
+                filenames.append('data/Kernels/Kernel_LoRes_' + name1 + 
                                  '_to_' + name2 + '.fits.gz')
-        FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, \
-                'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, \
+        FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, 
+                'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, 
                 'HERACLES': 13}
         if not FWHM1s:
             for name1 in name1s:
@@ -224,27 +237,27 @@ class Surveys(object):
         assert len(filenames) == len(name1s)
         assert len(FWHM1s) == len(name1s)            
 
-        print "Importing " + str(len(name1s)) + " kernel files..."
+        print("Importing", len(name1s), "kernel files...")
         tic = clock()        
-        for i in xrange(len(name1s)):
+        for i in range(len(name1s)):
             s = pd.Series()
             try:
-                s['KERNEL'], hdr = fits.getdata(filenames[i], 0, header = True)
+                s['KERNEL'], hdr = fits.getdata(filenames[i], 0, header=True)
                 s['KERNEL'] /= np.nansum(s['KERNEL'])
                 assert hdr['CD1_1'] == hdr['CD2_2']
-                assert hdr['CD1_2'] == hdr['CD2_1'] ==0
+                assert hdr['CD1_2'] == hdr['CD2_1'] == 0
                 assert hdr['CD1_1'] % 2
                 s['PS'] = np.array([hdr['CD1_1'] * u.degree.to(u.arcsec),
                                     hdr['CD2_2'] * u.degree.to(u.arcsec)])
                 s['FWHM1'], s['FWHM2'], s['NAME1'], s['NAME2'] = \
                             FWHM1s[i], FWHM2, name1s[i], name2
-                s['RGDKERNEL'], s['RGDPS'] = np.zeros([1,1]), np.zeros(2)
-                self.kernels = self.kernels.append(s.to_frame().T.\
-                               set_index(['NAME1','NAME2']))
+                s['RGDKERNEL'], s['RGDPS'] = np.zeros([1, 1]), np.zeros(2)
+                self.kernels = \
+                    self.kernels.append(s.to_frame().T.
+                                        set_index(['NAME1','NAME2']))
             except IOError:
-                print "Warning: " + filenames[i] + " doesn't exist!!"
-        toc = clock()
-        print "Done. Elapsed time: " + str(round(toc-tic, 3)) + " s."
+                print("Warning:", filenames[i], "doesn't exist!!")
+        print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
         
     def matching_PSF_1step(self, names, survey1s, survey2):
         """
@@ -254,17 +267,18 @@ class Surveys(object):
             survey2: <str>
                 Name of target PSF.
         """
-        names = [names] if type(names)==str else names
-        survey1s = [survey1s] if type(survey1s)==str else survey1s
+        names = [names] if type(names) == str else names
+        survey1s = [survey1s] if type(survey1s) == str else survey1s
         for survey1 in survey1s:
             for name in names:
-                cvl_image, new_ps, new_kernel = ric.matching_PSF_1step(\
-                                self.df, self.kernels, name, survey1, survey2)
+                cvl_image, new_ps, new_kernel = \
+                    ric.matching_PSF_1step(self.df, self.kernels, name, 
+                                           survey1, survey2)
                 self.df.set_value((name, survey1), 'CVL_MAP', cvl_image)
-                self.kernels.set_value((survey1, survey2), 'RGDKERNEL'\
-                                , new_kernel)
-                self.kernels.set_value((survey1, survey2), 'RGDPS'\
-                                , new_ps)
+                self.kernels.set_value((survey1, survey2), 'RGDKERNEL', 
+                                       new_kernel)
+                self.kernels.set_value((survey1, survey2), 'RGDPS', 
+                                       new_ps)
                                 
     def matching_PSF_2step(self, names, survey1s, k2_survey1, k2_survey2):
         """
@@ -276,21 +290,21 @@ class Surveys(object):
             k2_survey1, k2_survey2: <str>
                 Names of second kernel.
         """
-        names = [names] if type(names)==str else names
-        survey1s = [survey1s] if type(survey1s)==str else survey1s
+        names = [names] if type(names) == str else names
+        survey1s = [survey1s] if type(survey1s) == str else survey1s
         for survey1 in survey1s:
             for name in names:
-                cvl_image, new_ps, new_kernel = ric.matching_PSF_2step(\
-                        self.df, self.kernels, name, survey1, k2_survey1, \
-                        k2_survey2)
+                cvl_image, new_ps, new_kernel = \
+                    ric.matching_PSF_2step(self.df, self.kernels, name, 
+                                           survey1, k2_survey1, k2_survey2)
                 self.df.set_value((name, survey1), 'CVL_MAP', cvl_image)
-                self.kernels.set_value((k2_survey1, k2_survey2), 'RGDKERNEL'\
-                                , new_kernel)
-                self.kernels.set_value((k2_survey1, k2_survey2), 'RGDPS'\
-                                , new_ps)
+                self.kernels.set_value((k2_survey1, k2_survey2), 'RGDKERNEL', 
+                                       new_kernel)
+                self.kernels.set_value((k2_survey1, k2_survey2), 'RGDPS', 
+                                       new_ps)
             
-    def WCS_congrid(self, names, fine_surveys, course_survey, \
-                    method = 'linear'):
+    def WCS_congrid(self, names, fine_surveys, course_survey, 
+                    method='linear'):
         """
         Inputs:
             names, fine_surveys: <list of str | str>
@@ -300,16 +314,16 @@ class Surveys(object):
             method: <str>
                 Fitting method. 'linear', 'nearest', 'cubic'
         """
-        names = [names] if type(names)==str else names
-        fine_surveys = [fine_surveys] if type(fine_surveys)==str \
+        names = [names] if type(names) == str else names
+        fine_surveys = [fine_surveys] if type(fine_surveys) == str \
                        else fine_surveys
         for fine_survey in fine_surveys:
             for name in names:
-                rgd_image = ric.WCS_congrid(self.df, name, fine_survey, \
-                            course_survey, method)
+                rgd_image = ric.WCS_congrid(self.df, name, fine_survey, 
+                                            course_survey, method)
                 self.df.set_value((name, fine_survey), 'RGD_MAP', rgd_image)
                 
-    def fit_dust_density(self, names, nwalkers = 10, nsteps = 200):
+    def fit_dust_density(self, names, nwalkers=10, nsteps=200):
         """
         Inputs:
             names: <list of str | str>
@@ -320,6 +334,6 @@ class Surveys(object):
                 Number of steps in the mcm algorithm
         Outputs:
         """
-        names = [names] if type(names)==str else names
+        names = [names] if type(names) == str else names
         for name in names:
             fdd(self.df, name, nwalkers, nsteps)

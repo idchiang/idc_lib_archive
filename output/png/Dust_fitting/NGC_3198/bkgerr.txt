@@ -1,0 +1,35 @@
+Red: > 3 sigma
+Yellow: 2~3 sigma
+Blue: 1~2 sigma
+Dark blue: <1 sigma
+
+--
+PACS_100
+> 3 sigma: 178
+2~3 sigma: 72
+1~2 sigma: 274
+< 1 sigma: 3373
+
+PACS_160
+> 3 sigma: 258
+2~3 sigma: 66
+1~2 sigma: 327
+< 1 sigma: 3246
+
+SPIRE_250
+> 3 sigma: 361
+2~3 sigma: 123
+1~2 sigma: 336
+< 1 sigma: 3077
+
+SPIRE_350
+> 3 sigma: 364
+2~3 sigma: 133
+1~2 sigma: 356
+< 1 sigma: 3044
+
+SPIRE_500
+> 3 sigma: 286
+2~3 sigma: 100
+1~2 sigma: 339
+< 1 sigma: 3172

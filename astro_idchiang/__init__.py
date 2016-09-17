@@ -38,8 +38,7 @@ FUTURE TO DO:
     1. Normalization of the regrid map if already in "density"
     2. add_kernel: checking centered
 """
-from functions_idchiang import *
 from io_idchiang import *
-from regrid_idchiang import *
-from dustfit_idchiang import *
 from plot_idchiang import *
+from dustfit_idchiang import *
+from regrid_idchiang import *
