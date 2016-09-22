@@ -19,29 +19,29 @@ Corner:
     1. Cite the JOSS paper
        http://dx.doi.org/10.21105/joss.00024
 """
-from astro_idchiang import Surveys
+from astro_idchiang import Surveys, read_dust_file
+from astro_idchiang import fit_dust_density as fdd
+all_objects = ['DDO53', 'DDO154', 'HO_I', 'HO_II', 'IC_2574', 'M81_DWB', 
+               'NGC_628', 'NGC_925', 'NGC_2841', 'NGC_2976', 'NGC_3077', 
+               'NGC_3184', 'NGC_3198', 'NGC_3351', 'NGC_3521', 'NGC_3627', 
+               'NGC_4736', 'NGC_5055', 'NGC_5457', 'NGC_6946', 'NGC_7331']
+all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', 
+               'PACS_160', 'PACS_100', 'HERACLES']
+all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
+MP2 = ['THINGS', 'HERACLES']
+MP1 = ['SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
+fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
+                'PACS_100', 'HERACLES']
 
-def running():
-    THINGS_objects = ['NGC 628', 'NGC 925', 'NGC 1569', 'NGC 2366', 'NGC 2403',
-                      'Ho II', 'M81 DwA', 'DDO53', 'NGC 2841', 'NGC 2903',
-                      'Ho I', 'NGC 2976', 'NGC 3031', 'NGC 3077', 'M81 DwB',
-                      'NGC 3184', 'NGC 3198', 'IC 2574', 'NGC 3351', 
-                      'NGC 3521', 'NGC 3621', 'NGC 3627', 'NGC 4214', 
-                      'NGC 4449', 'NGC 4736', 'DDO154', 'NGC 4826', 'NGC 5055', 
-                      'NGC 5194', 'NGC 5236', 'NGC 5457', 'NGC 6946', 
-                      'NGC 7331', 'NGC 7793']
-    objects = ['NGC 3198', 'NGC 628']
-    all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', 
-                   'PACS_160', 'PACS_100', 'HERACLES']
-    all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
-    MP2 = ['THINGS', 'HERACLES']
-    MP1 = ['SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
-    fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
-                    'PACS_100', 'HERACLES']
-                
-    cmaps = Surveys(objects, all_surveys)
+def generating():                
+    cmaps = Surveys(all_objects, all_surveys)
     cmaps.add_kernel(all_kernels, 'SPIRE_500')
-    cmaps.matching_PSF_1step(objects, MP1, 'SPIRE_500')
-    cmaps.matching_PSF_2step(objects, MP2, 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(objects, fine_surveys, 'SPIRE_500')
-    cmaps.fit_dust_density(objects)
+    cmaps.matching_PSF_1step(all_objects, MP1, 'SPIRE_500')
+    cmaps.matching_PSF_2step(all_objects, MP2, 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(all_objects, fine_surveys, 'SPIRE_500')
+    cmaps.save_data(all_objects)
+    
+def fitting():
+    for object_ in all_objects:
+        fdd(object_, nwalkers=20, nsteps=200)
+        read_dust_file(object_, sig=1.0, bins=10)

@@ -3,13 +3,13 @@ from __future__ import absolute_import, division, print_function, \
 range = xrange
 import numpy as np
 import emcee
-import h5py
+from h5py import File
 import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy.constants import c, h, k_B
 from astro_idchiang.external import voronoi_2d_binning
 from .plot_idchiang import imshowid
-import corner
+# import corner
 from time import clock
 
 # Dust fitting constants
@@ -18,6 +18,9 @@ nu = (c / wl / u.um).to(u.Hz)
 const = 2.0891E-4
 kappa160 = 9.6 # fitting uncertainty = 0.4; Calibration uncertainty = 2.5
 WDC = 2900 # Wien's displacement constant (um*K)
+
+# Column density to mass surface density M_sun/pc**2
+col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 
 THINGS_Limit = 1.0E18 # HERACLES_LIMIT: heracles*2 > things
 
@@ -69,11 +72,11 @@ def _lnprob(theta, x, y, yerr):
         return -np.inf
     return lp + _lnlike(theta, x, y, yerr)
        
-def fit_dust_density(df, name, nwalkers=20, nsteps=200):
+def fit_dust_density(name, nwalkers=20, nsteps=200):
     """
     Inputs:
         df: <pandas DataFrame>
-            DataFrame contains map information
+            DataFrame contains map information for name
         name: <str>
             Object name to be calculated.
         nwalkers: <int>
@@ -89,73 +92,45 @@ def fit_dust_density(df, name, nwalkers=20, nsteps=200):
     # Dust density in Solar Mass / pc^2
     # kappa_lambda in cm^2 / g
     # SED in MJy / sr        
-    things = df.loc[(name, 'THINGS')].RGD_MAP
+    with File('output/RGD_data.h5', 'r') as hf:
+        grp = hf[name]
+        total_gas = np.array(grp['Total_gas'])
+        sed = np.array(grp['Herschel_SED'])
+        bkgerr = np.array(grp['Herschel_bkgerr'])
+        diskmask = np.array(grp['Diskmask'])
+        glx_ctr = np.array(grp['Galaxy_center'])
+        D = float(np.array(grp['Galaxy_distance']))
+        INCL = float(np.array(grp['INCL']))
+        PA = float(np.array(grp['PA']))
+        PS = np.array(grp['PS'])
 
-    # Cutting off the nan region of THINGS map.
-    # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
-    axissum = [0] * 2
-    lc = np.zeros([2,2], dtype=int)
-    for i in xrange(2):
-        axissum[i] = np.nansum(things, axis=i, dtype=bool)
-        for j in xrange(len(axissum[i])):
-            if axissum[i][j]:
-                lc[i-1, 0] = j
-                break
-        lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
-        
-    # Defining image size
-    sed = np.zeros([things.shape[0], things.shape[0], 5])            
-    heracles = df.loc[(name, 'HERACLES')].RGD_MAP
-    sed[:, :, 0] = df.loc[(name, 'PACS_100')].RGD_MAP
-    sed[:, :, 1] = df.loc[(name, 'PACS_160')].RGD_MAP
-    sed[:, :, 2] = df.loc[(name, 'SPIRE_250')].RGD_MAP
-    sed[:, :, 3] = df.loc[(name, 'SPIRE_350')].RGD_MAP
-    sed[:, :, 4] = df.loc[(name, 'SPIRE_500')].MAP
-    nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
-    glxmask = (things > THINGS_Limit)
-    diskmask = glxmask * nanmask
-            
-    # Using the variance of non-galaxy region as uncertainty
-    bkgerr0 = np.zeros(5)
-    for i in xrange(5):
-        inv_glxmask2 = ~(np.isnan(sed[:,:,i]) + glxmask)
-        temp = sed[inv_glxmask2, i]
-        sed[:, :, i] -= np.median(temp)
-        assert np.abs(np.mean(temp)) < np.max(temp) / 10
-        temp = temp[np.abs(temp) < (3 * np.std(temp))]
-        bkgerr0[i] = np.std(temp)
-    
-    # Cut the images and masks!!!
-    things = things[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
-    heracles = heracles[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
-    heracles[np.isnan(heracles)] = 0 # To avoid np.nan in H2 + signal in HI
-    """Build a total gas surface density map here. Check the units."""
-    sed = sed[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1], :]
-    diskmask = diskmask[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
-
-    popt = np.full([sed.shape[0], sed.shape[1], ndim], np.nan)
+    popt = np.full_like(sed[:, :, :ndim], np.nan)
     perr = popt.copy()
-    bkgerr = np.full_like(sed, bkgerr0)
-    bkgerr[~diskmask] = np.nan
+    binmap = np.full_like(sed[:, :, 0], np.nan)
+    bkgmap = np.full_like(sed, np.nan)
     # Voronoi binning
+    # d --> diskmasked, len() = sum(diskmask);
+    # b --> binned, len() = number of binned area
     print("Start binning " + name + "...")
     tic = clock()
-    targetSN = 5
-    signal = np.min(np.abs(sed[diskmask] / bkgerr[diskmask]), axis=1)
-    noise = np.ones(signal.shape)
-    x, y = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
-    x, y = x[diskmask], y[diskmask]
+    signal_d = np.min(np.abs(sed[diskmask] / bkgerr), axis=1)
+    noise_d = np.ones(signal_d.shape)
+    temp = np.max(signal_d)
+    if temp > (5 / 1.2):
+        targetSN = 5
+    else:
+        targetSN = 1.2 * temp
+    x_d, y_d = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
+    x_d, y_d = x_d[diskmask], y_d[diskmask]
     binNum, xNode, yNode, xBar, yBar, sn, nPixels, scale = \
-        voronoi_2d_binning(x, y, signal, noise, targetSN, cvt=True, 
+        voronoi_2d_binning(x_d, y_d, signal_d, noise_d, targetSN, cvt=True, 
                            pixelsize=None, plot=True, quiet=True, 
                            sn_func=None, wvt=True)
     plt.suptitle(name + ' Voronoi bin (TargetSN=' + str(targetSN) + ')')
     plt.savefig('output/Voronoi_binning/' + str(name) + '.png')
-    binmap = np.full_like(popt[:, :, 0], np.nan)
-    for i in range(len(signal)):
-        binmap[y[i], x[i]] = binNum[i]
+    for i in range(len(signal_d)):
+        binmap[y_d[i], x_d[i]] = binNum[i]
     binNumlist = np.unique(binNum)
-    """Modify the error map here"""
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     sed_avg = np.zeros([len(binNumlist), 5])
     
@@ -170,6 +145,8 @@ def fit_dust_density(df, name, nwalkers=20, nsteps=200):
             p += 0.1
         bin_ = (binmap == binNumlist[i])
         bkgerr_avg = bkgerr / np.sqrt(np.sum(bin_))
+        bkgmap[bin_] = bkgerr_avg
+        total_gas[bin_] = np.nanmean(total_gas[bin_])
         sed_avg[i] = np.mean(sed[bin_], axis=0)
         
         temp = WDC / wl[sed_avg[i].argsort()[-2:][::-1]]
@@ -182,7 +159,7 @@ def fit_dust_density(df, name, nwalkers=20, nsteps=200):
                                         args=(wl, sed_avg[i], bkgerr_avg))
         sampler.run_mcmc(pos, nsteps)
         # results.append(sampler.chain)
-        samples = sampler.chain[:, nsteps/2:, :].reshape(-1, ndim)
+        samples = sampler.chain[:, nsteps//2:, :].reshape(-1, ndim)
         pr = np.array([np.exp(_lnprob(sample, wl, sed_avg[i], bkgerr_avg)) 
                        for sample in samples])
         del sampler
@@ -196,27 +173,37 @@ def fit_dust_density(df, name, nwalkers=20, nsteps=200):
         perr[bin_] = np.array([serr, terr])
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
         
-    plt.figure()
-    plt.subplot(221)
-    imshowid(popt[:,:,0])
-    plt.title(name + 'Dust surface density')
-    plt.subplot(222)
-    imshowid(popt[:,:,1])
-    plt.title(name + 'Dust temperature')
-    plt.subplot(223)
-    plt.hist(popt[~np.isnan(popt[:,:,0]),0])
-    plt.title(name + 'Dust surface density')
-    plt.subplot(224)
-    plt.hist(popt[~np.isnan(popt[:,:,1]),1])
-    plt.title(name + 'Dust temperature')
-    plt.savefig('output/'+name+'_fitting_maps.png')    
-    with h5py.File('output/dust_data.h5', 'a') as hf:
-        hf.create_dataset(name+'_popt', data = popt)
-        hf.create_dataset(name+'_perr', data = perr)
-        hf.create_dataset(name+'binmap', data = binmap)
+    # Saving to h5 file
+    # Total_gas and dust in M_sun/pc**2
+    # Temperature in K
+    # SED in MJy/sr
+    # D in Mpc
+    # Galaxy_distance in 
+    # Galaxy_center in pixel [y, x]
+    # INCL, PA in degrees
+    # PS in arcsec
+    with File('output/dust_data.h5', 'a') as hf:
+        grp = hf.create_group(name)
+        grp.create_dataset('Total_gas', data=total_gas)
+        grp.create_dataset('Herschel_SED', data=sed)
+        """SED not binned yet"""
+        grp.create_dataset('Herschel_binned_bkg', data=bkgmap)
+        grp.create_dataset('Dust_surface_density', data=popt[:, :, 0])
+        grp.create_dataset('Dust_surface_density_err', data=perr[:, :, 0])
+        grp.create_dataset('Dust_temperature', data=popt[:, :, 1])
+        grp.create_dataset('Dust_temperature_err', data=perr[:, :, 1])
+        grp.create_dataset('Binmap', data=binmap)
+        grp.create_dataset('Galaxy_distance', data=D)
+        grp.create_dataset('Galaxy_center', data=glx_ctr)
+        grp.create_dataset('INCL', data=INCL)
+        grp.create_dataset('PA', data=PA)
+        grp.create_dataset('PS', data=PS)
+        grp.create_dataset('Bin_xBar', data=xBar)
+        grp.create_dataset('Bin_yBar', data=yBar)
     print("Datasets saved.")
-        
+
     ## Code for plotting the results
+    """
     testnums = np.random.randint(0,len(signal),5)
 
     for t in xrange(len(testnums)):
@@ -287,6 +274,63 @@ def fit_dust_density(df, name, nwalkers=20, nsteps=200):
                       range = [(smin, smax), (tmin, tmax), (lpmin, lpmax)])
         plt.suptitle('NGC 3198 ['+str(yt)+','+str(xt)+']')
         plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_corner.png')
+    """
+
+def read_dust_file(name='NGC 3198', sig=1.0, bins=10):
+    # name = 'NGC 3198'
+    # bins = 10
+    # sig = 1
+    hf = File('output/dust_data.h5', 'r')
+    grp = hf[name]
+    sexp = np.array(grp.get('Dust_surface_density'))
+    serr = np.array(grp.get('Dust_surface_density_err'))
+    texp = np.array(grp.get('Dust_temperature'))
+    terr = np.array(grp.get('Dust_temperature_err'))
+    total_gas = np.array(grp.get('Total_gas'))
+    # sed = np.array(grp.get('Herschel_SED'))
+    # bkgerr = np.array(grp.get('Herschel_binned_bkg'))
+    # binmap = np.array(grp.get('Binmap'))
+    # readme = np.array(grp.get('readme'))
+    hf.close()
+    
+    mask = (sexp < sig * serr) + (texp < sig * terr)
+    sexp[mask], texp[mask], serr[mask], terr[mask] = \
+        np.nan, np.nan, np.nan, np.nan
+    dgr = sexp / total_gas
+    
+    plt.figure()
+    plt.subplot(221)
+    imshowid(sexp)
+    plt.title('Surface density')
+    plt.subplot(222)
+    imshowid(texp)
+    plt.title('Temperature')
+    plt.subplot(223)
+    imshowid(serr)
+    plt.title('Surface density uncertainty')
+    plt.subplot(224)
+    imshowid(terr)
+    plt.title('Temperature uncertainty')
+    plt.suptitle(name)
+    plt.savefig('output/' + name + '_fitting_results.png')
+    
+    plt.figure()
+    plt.subplot(121)
+    plt.hist(np.log10(sexp[sexp>0]), bins = bins)
+    plt.title('Surface density distribution (log scale)')
+    plt.subplot(122)
+    plt.hist(texp[texp>0], bins = bins)
+    plt.title('Temperature distribution')
+    plt.suptitle(name)
+    plt.savefig('output/' + name + '_fitting_hist.png')
+
+    plt.figure()
+    plt.subplot(121)
+    imshowid(np.log10(dgr))
+    plt.subplot(122)
+    plt.hist(np.log10(dgr[dgr>0]), bins = bins)
+    plt.suptitle(name + ' dust to gas ratio (log scale)')
+    plt.savefig('output/' + name + '_fitting_DGR.png')
 
 """
 def reject_outliers(data, sig=2.):

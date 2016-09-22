@@ -3,14 +3,20 @@ from __future__ import absolute_import, division, print_function, \
 range = xrange
 import os
 import numpy as np
+import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
 from astropy.io import fits
 from astropy import wcs
+from astropy.coordinates import SkyCoord
 from h5py import File
 from time import clock
+from .plot_idchiang import imshowid
 from .dustfit_idchiang import fit_dust_density as fdd
 from . import regrid_idchiang as ric
+
+THINGS_Limit = 1.0E18 # HERACLES_LIMIT: heracles*2 > things
+col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 
 def read_h5(filename):
     """
@@ -110,12 +116,39 @@ class Surveys(object):
                 name1 = name[:i]
                 name2 = name[i:]
                 break
-        name = name1.upper() + ' ' + name2
 
-        if survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
-                      'PACS_100', 'HERACLES']:
+        if name1 == 'M':
+            if survey == 'THINGS':
+                filename = 'data/THINGS/M81_DWB_NA_MOM0_THINGS.FITS'
+            elif survey == 'SPIRE_500':
+                filename = 'data/SPIRE/M81dwB_I_500um_scan_k2011.fits.gz'
+            elif survey == 'SPIRE_350':
+                filename = 'data/SPIRE/M81dwB_I_350um_scan_k2011.fits.gz'
+            elif survey == 'SPIRE_250':
+                filename = 'data/SPIRE/M81dwB_I_250um_scan_k2011.fits.gz'
+            elif survey == 'PACS_160':
+                filename = 'data/PACS/M81dwB_I_160um_k2011.fits.gz'
+            elif survey == 'PACS_100':
+                filename = 'data/PACS/M81dwB_I_100um_k2011.fits.gz'
+            elif survey == 'HERACLES': 
+                filename = 'data/HERACLES/m81dwb_heracles_mom0.fits.gz'
+            else:
+                continuing = False
+                print("Warning: Survey not supported yet!!", 
+                      "Please check or enter file name directly.")
+        elif name1 == 'DDO' and survey == 'THINGS':
+            filename = 'data/THINGS/' + name1 + name2 + '_NA_MOM0_THINGS.FITS'
+        elif survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
+                        'PACS_100', 'HERACLES']:
             if name1.upper() == 'NGC' and len(name2) == 3:
                 name2 = '0' + name2
+            elif name1.upper() == 'DDO' and len(name2) == 2:
+                name2 = '0' + name2
+            elif name1.upper() == 'HO':
+                if survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250']:
+                    name1 = 'Holmberg'
+                elif survey in ['PACS_160', 'PACS_100']:
+                    name1 = 'HOLMBERG'
 
         if not filename:
             if survey == 'THINGS':
@@ -204,7 +237,7 @@ class Surveys(object):
                 self.df = \
                     self.df.append(s.to_frame().T.set_index([[name],[survey]]))
             except KeyError:
-                print("Warning:", name, "not in", self.name ,"csv database!!")
+                print("Warning:", name, "not in csv database!!")
             except IOError:
                 print("Warning:", filename ,"doesn't exist!!")
 				
@@ -322,18 +355,91 @@ class Surveys(object):
                 rgd_image = ric.WCS_congrid(self.df, name, fine_survey, 
                                             course_survey, method)
                 self.df.set_value((name, fine_survey), 'RGD_MAP', rgd_image)
-                
-    def fit_dust_density(self, names, nwalkers=10, nsteps=200):
+    
+    def save_data(self, names):    
         """
         Inputs:
             names: <list of str | str>
-                Object names to be calculated.
-            nwalkers: <int>
-                Number of 'walkers' in the mcmc algorithm
-            nsteps: <int>
-                Number of steps in the mcm algorithm
-        Outputs:
+                Object names to be saved.
         """
         names = [names] if type(names) == str else names
         for name in names:
-            fdd(self.df, name, nwalkers, nsteps)
+            print('Saving', name, 'data...')
+            things = self.df.loc[(name, 'THINGS')].RGD_MAP
+            # Cutting off the nan region of THINGS map.
+            # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
+            axissum = [0] * 2
+            lc = np.zeros([2,2], dtype=int)
+            for i in xrange(2):
+                axissum[i] = np.nansum(things, axis=i, dtype=bool)
+                for j in xrange(len(axissum[i])):
+                    if axissum[i][j]:
+                        lc[i-1, 0] = j
+                        break
+                lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
+
+            sed = np.zeros([things.shape[0], things.shape[1], 5])            
+            heracles = self.df.loc[(name, 'HERACLES')].RGD_MAP
+            sed[:, :, 0] = self.df.loc[(name, 'PACS_100')].RGD_MAP
+            sed[:, :, 1] = self.df.loc[(name, 'PACS_160')].RGD_MAP
+            sed[:, :, 2] = self.df.loc[(name, 'SPIRE_250')].RGD_MAP
+            sed[:, :, 3] = self.df.loc[(name, 'SPIRE_350')].RGD_MAP
+            sed[:, :, 4] = self.df.loc[(name, 'SPIRE_500')].MAP
+
+            # Defining image size
+            nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
+            glxmask = (things > THINGS_Limit)
+            diskmask = glxmask * nanmask
+                
+            # Using the variance of non-galaxy region as uncertainty
+            bkgerr = np.zeros(5)
+            for i in xrange(5):
+                inv_glxmask2 = ~(np.isnan(sed[:,:,i]) + glxmask)
+                temp = sed[inv_glxmask2, i]
+                sed[:, :, i] -= np.median(temp)
+                temp = temp[np.abs(temp) < (3 * np.std(temp))]
+                bkgerr[i] = np.std(temp)                
+                
+            # Cut the images and masks!!!
+            things = things[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
+            heracles = heracles[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
+            # To avoid np.nan in H2 + signal in HI
+            heracles[np.isnan(heracles)] = 0 
+            total_gas = col2sur * (2 * heracles + things)
+            sed = sed[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1], :]
+            diskmask = diskmask[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
+            total_gas[~diskmask] = np.nan
+            sed[~diskmask] = np.nan
+            
+            # Create some parameters for calculating radial distribution
+            ctr = SkyCoord(self.df.loc[name].CMC[0])
+            xcm, ycm = ctr.ra.degree, ctr.dec.degree
+            w = self.df.loc[(name, 'SPIRE_500')].WCS
+            x_ctr, y_ctr = w.wcs_world2pix(xcm, ycm, 1)
+            glx_ctr = np.array([y_ctr - lc[0, 0], x_ctr - lc[1, 0]])
+            with File('output/RGD_data.h5', 'a') as hf:
+                grp = hf.create_group(name)
+                grp.create_dataset('Total_gas', data=total_gas)
+                grp.create_dataset('Herschel_SED', data=sed)
+                grp.create_dataset('Herschel_bkgerr', data=bkgerr)
+                grp.create_dataset('Diskmask', data=diskmask)
+                grp.create_dataset('Galaxy_center', data=glx_ctr)
+                grp.create_dataset('Galaxy_distance', 
+                                   data=self.df.loc[name].D[0])
+                grp.create_dataset('INCL', data=self.df.loc[name].INCL[0])
+                grp.create_dataset('PA', data=self.df.loc[name].PA[0])
+                grp.create_dataset('PS', 
+                                   data=self.df.loc[(name, 'SPIRE_500')].PS)
+            plt.figure()
+            plt.subplot(2, 4, 1)
+            imshowid(np.log10(total_gas))
+            plt.title('Total gas (log scale)')
+            for i in range(5):
+                plt.subplot(2, 4, i + 2)
+                imshowid(sed[:, :, i])
+                plt.title('Herschel SED: ' + str(i))
+            plt.subplot(2, 4, 7)                
+            imshowid(diskmask)
+            plt.title('Diskmask')
+            plt.savefig('output/RGD_data/' + name + '.png')
+        print('All data saved.')
