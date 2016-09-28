@@ -103,6 +103,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         INCL = float(np.array(grp['INCL']))
         PA = float(np.array(grp['PA']))
         PS = np.array(grp['PS'])
+        # THINGS_Limit = np.array(grp['THINGS_LIMIT'])
 
     popt = np.full_like(sed[:, :, :ndim], np.nan)
     perr = popt.copy()

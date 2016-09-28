@@ -25,6 +25,7 @@ all_objects = ['DDO53', 'DDO154', 'HO_I', 'HO_II', 'IC_2574', 'M81_DWB',
                'NGC_628', 'NGC_925', 'NGC_2841', 'NGC_2976', 'NGC_3077', 
                'NGC_3184', 'NGC_3198', 'NGC_3351', 'NGC_3521', 'NGC_3627', 
                'NGC_4736', 'NGC_5055', 'NGC_5457', 'NGC_6946', 'NGC_7331']
+all_objects = ['M81_DWB']
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', 
                'PACS_160', 'PACS_100', 'HERACLES']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
@@ -33,7 +34,7 @@ MP1 = ['SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
                 'PACS_100', 'HERACLES']
 
-def generating():                
+def generator():
     cmaps = Surveys(all_objects, all_surveys)
     cmaps.add_kernel(all_kernels, 'SPIRE_500')
     cmaps.matching_PSF_1step(all_objects, MP1, 'SPIRE_500')

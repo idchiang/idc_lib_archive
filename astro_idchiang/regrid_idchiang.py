@@ -98,7 +98,7 @@ def matching_PSF_1step(df, kernels, name, survey1, survey2):
     image1 = df.loc[name, survey1].MAP
     print("Convolving " + name + " " + survey1 + " map (1/1)...")
     tic = clock()
-    image1_2 = convolve_fft(image1, kernel)
+    image1_2 = convolve_fft(image1, kernel, interpolate_nan=False)
     image1_2[np.isnan(image1)] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     f1, f2 = np.nansum(image1), np.nansum(image1_2)
@@ -145,12 +145,12 @@ def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
     print("Convolving " + name + " " + survey1 + " map (1/2)...")
     tic = clock()
     kernel1 = Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM2)
-    image1_1 = convolve_fft(image1, kernel1)
+    image1_1 = convolve_fft(image1, kernel1, interpolate_nan=False)
     image1_1[np.isnan(image1)] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     print("Convolving " + name + " " + survey1 + " map (2/2)...")
     tic = clock()
-    image1_2 = convolve_fft(image1_1, kernel2)
+    image1_2 = convolve_fft(image1_1, kernel2, interpolate_nan=False)
     image1_2[np.isnan(image1)] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     f1, f2, f3 = np.nansum(image1), np.nansum(image1_1), np.nansum(image1_2)

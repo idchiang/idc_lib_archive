@@ -12,10 +12,8 @@ from astropy.coordinates import SkyCoord
 from h5py import File
 from time import clock
 from .plot_idchiang import imshowid
-from .dustfit_idchiang import fit_dust_density as fdd
 from . import regrid_idchiang as ric
 
-THINGS_Limit = 1.0E18 # HERACLES_LIMIT: heracles*2 > things
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 
 def read_h5(filename):
@@ -149,6 +147,8 @@ class Surveys(object):
                     name1 = 'Holmberg'
                 elif survey in ['PACS_160', 'PACS_100']:
                     name1 = 'HOLMBERG'
+                else:
+                    name2 = name2.lower()
 
         if not filename:
             if survey == 'THINGS':
@@ -385,29 +385,33 @@ class Surveys(object):
             sed[:, :, 2] = self.df.loc[(name, 'SPIRE_250')].RGD_MAP
             sed[:, :, 3] = self.df.loc[(name, 'SPIRE_350')].RGD_MAP
             sed[:, :, 4] = self.df.loc[(name, 'SPIRE_500')].MAP
-
-            # Defining image size
-            nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
-            glxmask = (things > THINGS_Limit)
-            diskmask = glxmask * nanmask
                 
             # Using the variance of non-galaxy region as uncertainty
-            bkgerr = np.zeros(5)
-            for i in xrange(5):
-                inv_glxmask2 = ~(np.isnan(sed[:,:,i]) + glxmask)
-                temp = sed[inv_glxmask2, i]
-                sed[:, :, i] -= np.median(temp)
-                temp = temp[np.abs(temp) < (3 * np.std(temp))]
-                bkgerr[i] = np.std(temp)                
+            nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
+            bkgerr = np.full(5, np.nan)
+            THINGS_Limit = 1.0E17
+            while(np.sum(np.isnan(bkgerr))):
+                THINGS_Limit *= 10
+                temp = []
+                glxmask = (things > THINGS_Limit)
+                diskmask = glxmask * nanmask
+                for i in range(5):
+                    inv_glxmask2 = ~(np.isnan(sed[:, :, i]) + glxmask)
+                    temp.append(sed[inv_glxmask2, i])
+                    temp[i] = temp[i][np.abs(temp[i]) < (3 * np.std(temp[i]))]
+                    bkgerr[i] = np.std(temp[i])
+
+            for i in range(5):                
+                sed[:, :, i] -= np.median(temp[i])
                 
             # Cut the images and masks!!!
-            things = things[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
-            heracles = heracles[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
+            things = things[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+            heracles = heracles[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             # To avoid np.nan in H2 + signal in HI
             heracles[np.isnan(heracles)] = 0 
             total_gas = col2sur * (2 * heracles + things)
-            sed = sed[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1], :]
-            diskmask = diskmask[lc[0,0]:lc[0,1], lc[1,0]:lc[1,1]]
+            sed = sed[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
+            diskmask = diskmask[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             total_gas[~diskmask] = np.nan
             sed[~diskmask] = np.nan
             
@@ -430,10 +434,11 @@ class Surveys(object):
                 grp.create_dataset('PA', data=self.df.loc[name].PA[0])
                 grp.create_dataset('PS', 
                                    data=self.df.loc[(name, 'SPIRE_500')].PS)
+                grp.create_dataset('THINGS_LIMIT', data=THINGS_Limit)
             plt.figure()
             plt.subplot(2, 4, 1)
             imshowid(np.log10(total_gas))
-            plt.title('Total gas (log scale)')
+            plt.title('Total gas (log); TL = ' + str(THINGS_Limit))
             for i in range(5):
                 plt.subplot(2, 4, i + 2)
                 imshowid(sed[:, :, i])
@@ -441,5 +446,8 @@ class Surveys(object):
             plt.subplot(2, 4, 7)                
             imshowid(diskmask)
             plt.title('Diskmask')
+            plt.suptitle(name)
             plt.savefig('output/RGD_data/' + name + '.png')
+            plt.clf()
+            plt.close()
         print('All data saved.')
