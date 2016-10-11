@@ -26,6 +26,7 @@ all_objects = ['DDO53', 'DDO154', 'HO_I', 'HO_II', 'IC_2574', 'M81_DWB',
                'NGC_3184', 'NGC_3198', 'NGC_3351', 'NGC_3521', 'NGC_3627', 
                'NGC_4736', 'NGC_5055', 'NGC_5457', 'NGC_6946', 'NGC_7331']
 all_objects = ['M81_DWB']
+all_objects = ['NGC_3198']
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', 
                'PACS_160', 'PACS_100', 'HERACLES']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']

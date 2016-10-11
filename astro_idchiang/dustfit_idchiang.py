@@ -163,7 +163,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         samples = sampler.chain[:, nsteps//2:, :].reshape(-1, ndim)
         pr = np.array([np.exp(_lnprob(sample, wl, sed_avg[i], bkgerr_avg)) 
                        for sample in samples])
-        del sampler
+        results = sampler.chain
         z_ptt = np.sum(pr)
         # Saving results to popt and perr
         sexp = np.sum(samples[:, 0]*pr) / z_ptt
@@ -277,39 +277,68 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_corner.png')
     """
 
-def read_dust_file(name='NGC 3198', sig=1.0, bins=10):
-    # name = 'NGC 3198'
+def read_dust_file(name='NGC_3198', bins=10, off=30):
+    # name = 'NGC_3198'
     # bins = 10
-    # sig = 1
-    hf = File('output/dust_data.h5', 'r')
-    grp = hf[name]
-    sexp = np.array(grp.get('Dust_surface_density'))
-    serr = np.array(grp.get('Dust_surface_density_err'))
-    texp = np.array(grp.get('Dust_temperature'))
-    terr = np.array(grp.get('Dust_temperature_err'))
-    total_gas = np.array(grp.get('Total_gas'))
-    # sed = np.array(grp.get('Herschel_SED'))
-    # bkgerr = np.array(grp.get('Herschel_binned_bkg'))
-    # binmap = np.array(grp.get('Binmap'))
-    # readme = np.array(grp.get('readme'))
-    hf.close()
+    with File('output/dust_data.h5', 'r') as hf:
+        grp = hf[name]
+        sexp = np.array(grp.get('Dust_surface_density'))
+        serr = np.array(grp.get('Dust_surface_density_err'))
+        texp = np.array(grp.get('Dust_temperature'))
+        terr = np.array(grp.get('Dust_temperature_err'))
+        total_gas = np.array(grp.get('Total_gas'))
+        sed = np.array(grp.get('Herschel_SED'))
+        bkgerr = np.array(grp.get('Herschel_binned_bkg'))
+        binmap = np.array(grp.get('Binmap'))
+        # readme = np.array(grp.get('readme'))
     
-    mask = (sexp < sig * serr) + (texp < sig * terr)
-    sexp[mask], texp[mask], serr[mask], terr[mask] = \
-        np.nan, np.nan, np.nan, np.nan
+    upper_bound = np.full_like(sexp, np.nan)
+    lnprob = np.full_like(sexp, np.nan)
+    binlist = np.unique(binmap[~np.isnan(binmap)])
+    for bin_ in binlist:
+        mask = binmap == bin_
+        sed[mask] = np.nanmean(sed[mask], axis=0)
+        calerr2 = calerr_matrix2 * sed[mask][0]**2
+        inv_sigma2 = 1 / (bkgerr[mask][0]**2 + calerr2)
+        upper_bound[mask] = 0.5 * np.sum(np.log(inv_sigma2))
+        lnprob[mask] = _lnprob([sexp[mask][0], texp[mask][0]], wl, 
+                               sed[mask][0], bkgerr[mask][0])
+        if upper_bound[mask][0] - lnprob[mask][0] > off:
+            sexp[mask] = np.nan
+            texp[mask] = np.nan
+            serr[mask] = np.nan
+            terr[mask] = np.nan
+            upper_bound[mask] = np.nan
+            lnprob[mask] = np.nan
+    
+    plt.figure()
+    plt.subplot(131)
+    imshowid(upper_bound)
+    plt.title('upper_bound')
+    plt.subplot(132)
+    imshowid(lnprob)
+    plt.title('lnprob')
+    plt.subplot(133)
+    imshowid(upper_bound - lnprob)
+    plt.title('diff')
+    plt.suptitle(name)
+    
     dgr = sexp / total_gas
     
     plt.figure()
-    plt.subplot(221)
+    plt.subplot(231)
+    imshowid(np.log10(total_gas))
+    plt.title('Total gas (log)')
+    plt.subplot(232)
     imshowid(sexp)
     plt.title('Surface density')
-    plt.subplot(222)
+    plt.subplot(233)
     imshowid(texp)
     plt.title('Temperature')
-    plt.subplot(223)
+    plt.subplot(235)
     imshowid(serr)
     plt.title('Surface density uncertainty')
-    plt.subplot(224)
+    plt.subplot(236)
     imshowid(terr)
     plt.title('Temperature uncertainty')
     plt.suptitle(name)
@@ -326,12 +355,30 @@ def read_dust_file(name='NGC 3198', sig=1.0, bins=10):
     plt.savefig('output/' + name + '_fitting_hist.png')
 
     plt.figure()
-    plt.subplot(121)
+    plt.subplot(131)
+    imshowid(np.log10(total_gas))
+    plt.title('Total gas (log)')    
+    plt.subplot(132)
     imshowid(np.log10(dgr))
-    plt.subplot(122)
+    plt.title('DGR')
+    plt.subplot(133)
     plt.hist(np.log10(dgr[dgr>0]), bins = bins)
+    plt.title('DGR')
     plt.suptitle(name + ' dust to gas ratio (log scale)')
     plt.savefig('output/' + name + '_fitting_DGR.png')
+
+    plt.figure()
+    plt.subplot(121)
+    plt.scatter(total_gas.flatten(), sexp.flatten())
+    plt.xlabel(r'Total gas surface mass density ($M_\odot/pc^2$)')
+    plt.ylabel(r'Dust surface mass density ($M_\odot/pc^2$)')
+    plt.title('Linear scale')    
+    plt.subplot(122)
+    plt.scatter(np.log10(total_gas.flatten()), np.log10(sexp.flatten()))
+    plt.xlabel(r'Total gas surface mass density ($M_\odot/pc^2$)')
+    plt.ylabel(r'Dust surface mass density ($M_\odot/pc^2$)')
+    plt.title('Log scale')
+    plt.suptitle('Total gas vs. dust')
 
 """
 def reject_outliers(data, sig=2.):
