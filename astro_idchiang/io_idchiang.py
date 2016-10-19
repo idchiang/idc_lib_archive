@@ -91,7 +91,7 @@ class Surveys(object):
                     self.galaxy_data['BMIN'] = [1.0] * len(self.galaxy_data)            
                     self.galaxy_data['BPA'] = [0.0] * len(self.galaxy_data)     
                 for name in names:
-					self.add_galaxy(name, survey) 
+					self.add_galaxy(name, survey)
 		
     def add_galaxy(self, name, survey, filename=None):
         """   
@@ -219,19 +219,15 @@ class Surveys(object):
                 s['PS'] = ps
                 s['CVL_MAP'] = np.zeros([1, 1])
                 s['RGD_MAP'] = np.zeros([1, 1])
-                s['CAL_MASS'] = np.zeros([1, 1])
-                s['DP_RADIUS'] = np.zeros([1, 1])
+                s['CAL_MASS'] = 0
+                s['DP_RADIUS'] = self.dp_radius(s) if \
+                    (survey == 'SPIRE_500') else np.zeros([1, 1])
                 s['RVR'] = np.zeros([1, 1])
                 """
                 if cal:
                     print "Calculating " + name + "..."
                     s['CAL_MASS'] = self.total_mass(s)
-                    s['DP_RADIUS'] = self.dp_radius(s)
                     s['RVR'] = self.Radial_prof(s)
-                else:
-                    s['CAL_MASS'] = np.zeros([1,1])
-                    s['DP_RADIUS'] = np.zeros([1,1])
-                    s['RVR'] = np.zeros([1,1])
                 """
                 # Update DataFrame
                 self.df = \
@@ -355,7 +351,43 @@ class Surveys(object):
                 rgd_image = ric.WCS_congrid(self.df, name, fine_survey, 
                                             course_survey, method)
                 self.df.set_value((name, fine_survey), 'RGD_MAP', rgd_image)
-    
+
+    def dp_radius(self, s):
+        """
+        Inputs:
+            s: <pandas.Series>
+                Series containting all information needed.
+        """
+        l = s.L
+        cosPA = np.cos((s.PA) * np.pi / 180)
+        sinPA = np.sin((s.PA) * np.pi / 180)
+        cosINCL = np.cos(s.INCL * np.pi / 180)
+        w = s.WCS        
+        ctr = SkyCoord(s.CMC)
+        xcm, ycm = ctr.ra.radian, ctr.dec.radian
+        dp_coords = np.zeros([l[0], l[1], 2])
+        # Original coordinate is (y, x)
+        # :1 --> x, RA --> the one needed to be divided by cos(incl)
+        # :0 --> y, Dec
+        dp_coords[:, :, 0], dp_coords[:, :, 1] = \
+            np.meshgrid(np.arange(l[1]), np.arange(l[0]))
+        # Now, value inside dp_coords is (x, y)
+        # :0 --> x, RA --> the one needed to be divided by cos(incl)
+        # :1 --> y, Dec        
+        for i in xrange(l[0]):
+            dp_coords[i] = w.wcs_pix2world(dp_coords[i], 1) * np.pi / 180
+        dp_coords[:, :, 0] = 0.5 * (dp_coords[:, :, 0] - xcm) * \
+                             (np.cos(dp_coords[:, :, 1]) + np.cos(ycm))
+        dp_coords[:, :, 1] -= ycm
+        # Now, dp_coords is (dx, dy) in the original coordinate
+        # cosPA*dy-sinPA*dx is new y
+        # cosPA*dx+sinPA*dy is new x
+        return np.sqrt((cosPA * dp_coords[:, :, 1] + 
+                        sinPA * dp_coords[:, :, 0])**2 +  
+                       ((cosPA * dp_coords[:, :, 0] - 
+                         sinPA * dp_coords[:, :, 1]) / cosINCL)**2) * \
+                   s.D * 1.0E3 # Radius in kpc
+
     def save_data(self, names):    
         """
         Inputs:
@@ -385,6 +417,7 @@ class Surveys(object):
             sed[:, :, 2] = self.df.loc[(name, 'SPIRE_250')].RGD_MAP
             sed[:, :, 3] = self.df.loc[(name, 'SPIRE_350')].RGD_MAP
             sed[:, :, 4] = self.df.loc[(name, 'SPIRE_500')].MAP
+            dp_radius = self.df.loc[(name, 'SPIRE_500')].DP_RADIUS
                 
             # Using the variance of non-galaxy region as uncertainty
             nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
@@ -412,8 +445,11 @@ class Surveys(object):
             total_gas = col2sur * (2 * heracles + things)
             sed = sed[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
             diskmask = diskmask[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+            dp_radius = dp_radius[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+            assert diskmask.shape == dp_radius.shape
             total_gas[~diskmask] = np.nan
             sed[~diskmask] = np.nan
+            dp_radius[~diskmask] = np.nan
             
             # Create some parameters for calculating radial distribution
             ctr = SkyCoord(self.df.loc[name].CMC[0])
@@ -435,6 +471,7 @@ class Surveys(object):
                 grp.create_dataset('PS', 
                                    data=self.df.loc[(name, 'SPIRE_500')].PS)
                 grp.create_dataset('THINGS_LIMIT', data=THINGS_Limit)
+                grp.create_dataset('DP_RADIUS', data=dp_radius) # kpc
             plt.figure()
             plt.subplot(2, 4, 1)
             imshowid(np.log10(total_gas))

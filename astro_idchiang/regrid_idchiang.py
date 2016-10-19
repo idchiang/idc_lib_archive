@@ -7,6 +7,9 @@ from astropy.convolution import convolve_fft
 from time import clock
 from .functions_idchiang import reasonably_close, Gaussian_Kernel_C1
 
+## If rm_bad_pts becomes less than threshold after convolution, remove.
+threshold = 0.9
+
 def Kernel_regrid(kernels, ps_new, name1, name2, target_name=None, 
                   method='cubic'):
     """
@@ -96,11 +99,16 @@ def matching_PSF_1step(df, kernels, name, survey1, survey2):
             kernel = Kernel_regrid(kernels, ps, survey1, survey2)
 
     image1 = df.loc[name, survey1].MAP
+    rm_bad_pts = np.full_like(image1, 1)
+    rm_bad_pts[np.isnan(image1)] = np.nan
     print("Convolving " + name + " " + survey1 + " map (1/1)...")
     tic = clock()
     image1_2 = convolve_fft(image1, kernel, interpolate_nan=False)
+    rm_bad_pts = convolve_fft(rm_bad_pts, kernel, interpolate_nan=False)
     image1_2[np.isnan(image1)] = np.nan
+    image1_2[rm_bad_pts < threshold] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+    image1[rm_bad_pts < threshold] = np.nan
     f1, f2 = np.nansum(image1), np.nansum(image1_2)
     print("Normalized flux variation:", np.abs(f1 - f2) / f1)
     return image1_2, ps, kernel
@@ -141,18 +149,25 @@ def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
     bmin = df.loc[name, survey1].BMIN
     image1 = df.loc[name, survey1].MAP
     FWHM2 = kernels.loc[k2_survey1, k2_survey2].FWHM1
+    rm_bad_pts = np.full_like(image1, 1)
+    rm_bad_pts[np.isnan(image1)] = np.nan
 
     print("Convolving " + name + " " + survey1 + " map (1/2)...")
     tic = clock()
     kernel1 = Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM2)
     image1_1 = convolve_fft(image1, kernel1, interpolate_nan=False)
+    rm_bad_pts = convolve_fft(rm_bad_pts, kernel1, interpolate_nan=False)
     image1_1[np.isnan(image1)] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     print("Convolving " + name + " " + survey1 + " map (2/2)...")
     tic = clock()
     image1_2 = convolve_fft(image1_1, kernel2, interpolate_nan=False)
+    rm_bad_pts = convolve_fft(rm_bad_pts, kernel2, interpolate_nan=False)
     image1_2[np.isnan(image1)] = np.nan
+    image1_2[rm_bad_pts < threshold] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+    image1[rm_bad_pts < threshold] = np.nan
+    image1_1[rm_bad_pts < threshold] = np.nan
     f1, f2, f3 = np.nansum(image1), np.nansum(image1_1), np.nansum(image1_2)
     print("Normalized flux variation. first step: ", np.abs(f1 - f2) / f1)
     print("                           second step:", np.abs(f2 - f3) / f2)

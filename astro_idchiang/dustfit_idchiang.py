@@ -2,15 +2,15 @@ from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 range = xrange
 import numpy as np
+from time import clock
 import emcee
 from h5py import File
 import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy.constants import c, h, k_B
-from astro_idchiang.external import voronoi_2d_binning
-from .plot_idchiang import imshowid
 # import corner
-from time import clock
+from external import voronoi_2d_binning_m
+from plot_idchiang import imshowid
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
@@ -23,6 +23,11 @@ WDC = 2900 # Wien's displacement constant (um*K)
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 
 THINGS_Limit = 1.0E18 # HERACLES_LIMIT: heracles*2 > things
+
+FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, 
+        'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, 
+        'HERACLES': 13}
+fwhm_sp500 = FWHM['SPIRE_500'] * u.arcsec.to(u.rad) # in rad
 
 # Calibration error of PACS_100, PACS_160, SPIRE_250, SPIRE_350, SPIRE_500
 # For extended source
@@ -46,17 +51,14 @@ def _sigma0(wl, SL, T):
     return SL * (wl / 160)**2 / const / kappa160 / \
            _B(T * u.K, (c / wl / u.um).to(u.Hz))
     
-def _lnlike(theta, x, y, bkgerr):
+def _lnlike(theta, x, y, inv_sigma2):
     """Probability function for fitting"""
     sigma, T = theta
     model = _model(x, sigma, T)
-    calerr2 = calerr_matrix2 * y**2
-    inv_sigma2 = 1 / (bkgerr**2 + calerr2)
     if np.sum(np.isinf(inv_sigma2)):
         return -np.inf
     else:
-        return -0.5 * (np.sum((y - model)**2 * inv_sigma2 - 
-                       np.log(inv_sigma2)))
+        return -0.5 * (np.sum((y - model)**2 * inv_sigma2))
         
 def _lnprior(theta):
     """Probability function for fitting"""
@@ -65,14 +67,15 @@ def _lnprior(theta):
         return 0
     return -np.inf
         
-def _lnprob(theta, x, y, yerr):
+def _lnprob(theta, x, y, inv_sigma2):
     """Probability function for fitting"""
     lp = _lnprior(theta)
     if not np.isfinite(lp):
         return -np.inf
-    return lp + _lnlike(theta, x, y, yerr)
-       
-def fit_dust_density(name, nwalkers=20, nsteps=200):
+    return lp + _lnlike(theta, x, y, inv_sigma2)
+
+def fit_dust_density(name, nwalkers=20, nsteps=200, nrounds=10, 
+                     lim_lnprob=-10):
     """
     Inputs:
         df: <pandas DataFrame>
@@ -89,6 +92,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         name_perr: <numpy array>
             Error of optimized parameters
     """
+    targetSN = 5
     # Dust density in Solar Mass / pc^2
     # kappa_lambda in cm^2 / g
     # SED in MJy / sr        
@@ -103,12 +107,16 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         INCL = float(np.array(grp['INCL']))
         PA = float(np.array(grp['PA']))
         PS = np.array(grp['PS'])
+        dp_radius = np.array(grp['DP_RADIUS'])
         # THINGS_Limit = np.array(grp['THINGS_LIMIT'])
 
     popt = np.full_like(sed[:, :, :ndim], np.nan)
     perr = popt.copy()
-    binmap = np.full_like(sed[:, :, 0], np.nan)
+    popt_max = popt.copy()
+    perr_max = popt.copy()
+    binmap = np.full_like(sed[:, :, 0], np.nan, dtype=int)
     bkgmap = np.full_like(sed, np.nan)
+    radiusmap = np.full_like(sed[:, :, 0], np.nan)
     # Voronoi binning
     # d --> diskmasked, len() = sum(diskmask);
     # b --> binned, len() = number of binned area
@@ -116,19 +124,98 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
     tic = clock()
     signal_d = np.min(np.abs(sed[diskmask] / bkgerr), axis=1)
     noise_d = np.ones(signal_d.shape)
-    temp = np.max(signal_d)
-    if temp > (5 / 1.2):
-        targetSN = 5
-    else:
-        targetSN = 1.2 * temp
     x_d, y_d = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
     x_d, y_d = x_d[diskmask], y_d[diskmask]
-    binNum, xNode, yNode, xBar, yBar, sn, nPixels, scale = \
-        voronoi_2d_binning(x_d, y_d, signal_d, noise_d, targetSN, cvt=True, 
-                           pixelsize=None, plot=True, quiet=True, 
-                           sn_func=None, wvt=True)
-    plt.suptitle(name + ' Voronoi bin (TargetSN=' + str(targetSN) + ')')
-    plt.savefig('output/Voronoi_binning/' + str(name) + '.png')
+    # Dividing into layers
+    judgement = np.min(np.abs(np.sum(signal_d)) / np.sqrt(len(signal_d)))
+    if judgement < targetSN:
+        print(name, 'is having just too low overall SNR. Will not fit')
+        # Save something just to avoid reading error
+        ept = np.empty_like(total_gas, dtype=int)
+        with File('output/dust_data.h5', 'a') as hf:
+            grp = hf.create_group(name)
+            grp.create_dataset('Total_gas', data=total_gas)
+            grp.create_dataset('Herschel_SED', data=sed)
+            """SED not binned yet"""
+            grp.create_dataset('Herschel_binned_bkg', data=ept)
+            grp.create_dataset('Dust_surface_density', data=ept)
+            grp.create_dataset('Dust_surface_density_err', data=ept)
+            grp.create_dataset('Dust_temperature', data=ept)
+            grp.create_dataset('Dust_temperature_err', data=ept)
+            grp.create_dataset('Dust_surface_density_max', data=ept)
+            grp.create_dataset('Dust_surface_density_err_max', data=ept)
+            grp.create_dataset('Dust_temperature_max', data=ept)
+            grp.create_dataset('Dust_temperature_err_max', data=ept)
+            grp.create_dataset('Binmap', data=ept)
+            grp.create_dataset('Galaxy_distance', data=D)
+            grp.create_dataset('Galaxy_center', data=glx_ctr)
+            grp.create_dataset('INCL', data=INCL)
+            grp.create_dataset('PA', data=PA)
+            grp.create_dataset('PS', data=PS)
+            grp.create_dataset('Radius_map', data=ept) # kpc    
+        # return None
+    
+    fwhm_radius = fwhm_sp500 * D * 1E3 / np.cos(INCL * np.pi / 180)
+    nlayers = int(np.nanmax(dp_radius) // fwhm_radius)
+    masks = []
+    masks.append(dp_radius < fwhm_radius)
+    for i in range(1, nlayers - 1):
+        masks.append((dp_radius >= i * fwhm_radius) * 
+                     (dp_radius < (i + 1) * fwhm_radius))
+    masks.append(dp_radius >= (nlayers - 1) * fwhm_radius)
+    ##### test image: original layers #####
+    image_test1 = np.full_like(dp_radius, np.nan)
+    for i in range(nlayers):
+        image_test1[masks[i]] = i
+    #######################################
+    
+    for i in range(nlayers - 1, -1, -1):
+        judgement = np.min(np.abs(np.sum(sed[masks[i]], axis=0)) / 
+                           np.sqrt(np.sum(masks[i])) / bkgerr)
+        if judgement < targetSN:
+            if i > 0:
+                masks[i - 1] += masks[i]
+                del masks[i]
+            else:
+                masks[0] += masks[1]
+                del masks[1]
+    nlayers = len(masks)
+    ##### test image: combined layers #####
+    image_test2 = np.full_like(dp_radius, np.nan)
+    for i in range(nlayers):
+        image_test2[masks[i]] = i
+    plt.figure()
+    plt.subplot(221)
+    imshowid(np.log10(total_gas))
+    plt.title('Total gas')
+    plt.subplot(222)
+    imshowid(dp_radius)
+    plt.title('Deprojected radius map')
+    plt.subplot(223)
+    imshowid(image_test1)
+    plt.title('Original cuts')
+    plt.subplot(224)
+    imshowid(image_test2)
+    plt.title('SNR combined cuts')
+    #######################################
+    masks = [masks[i][diskmask] for i in range(nlayers)]
+    """ Modify radial bins here """
+    max_binNum = 0
+    binNum = np.full_like(signal_d, np.nan)
+    for i in range(nlayers):
+        x_l, y_l, signal_l, noise_l = x_d[masks[i]], y_d[masks[i]], \
+                                      signal_d[masks[i]], noise_d[masks[i]]
+        if np.min(signal_l) > targetSN:
+            binNum_l = np.arange(len(signal_l))
+        else:
+            plt.figure()
+            binNum_l, xNode, yNode, xBar, yBar, sn, nPixels, scale = \
+                voronoi_2d_binning_m(x_l, y_l, signal_l, noise_l, targetSN, 
+                                     pixelsize=1, plot=True, quiet=True)
+        binNum_l += max_binNum
+        max_binNum = np.max(binNum_l)
+        binNum[masks[i]] = binNum_l
+
     for i in range(len(signal_d)):
         binmap[y_d[i], x_d[i]] = binNum[i]
     binNumlist = np.unique(binNum)
@@ -138,6 +225,9 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
     print("Start fitting", name, "dust surface density...")
     tic = clock()
 
+    best_lnpr = np.zeros(len(binNumlist))
+    first_time_lnpr = np.zeros(len(binNumlist))
+    final_runstep = np.zeros(len(binNumlist))
     p = 0
     # results = [] # array for saving all the raw chains
     for i in xrange(len(binNumlist)):
@@ -145,10 +235,15 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
             print('Step', (i + 1), '/', len(binNumlist))
             p += 0.1
         bin_ = (binmap == binNumlist[i])
+        radiusmap[bin_] = np.sum(dp_radius[bin_] * total_gas[bin_]) / \
+                          np.sum(total_gas[bin_])  # total_gas weighted radius
         bkgerr_avg = bkgerr / np.sqrt(np.sum(bin_))
         bkgmap[bin_] = bkgerr_avg
         total_gas[bin_] = np.nanmean(total_gas[bin_])
         sed_avg[i] = np.mean(sed[bin_], axis=0)
+        sed[bin_] = sed_avg[i]
+        calerr2 = calerr_matrix2 * sed_avg[i]**2
+        inv_sigma2 = 1 / (bkgerr_avg**2 + calerr2)
         
         temp = WDC / wl[sed_avg[i].argsort()[-2:][::-1]]
         temp0 = np.random.uniform(np.min(temp), np.max(temp), [nwalkers, 1])
@@ -157,23 +252,44 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         sigma0 = np.random.uniform(init_sig / 2, init_sig * 2, [nwalkers, 1])
         pos = np.concatenate([sigma0, temp0], axis=1)
         sampler = emcee.EnsembleSampler(nwalkers, ndim, _lnprob,
-                                        args=(wl, sed_avg[i], bkgerr_avg))
-        sampler.run_mcmc(pos, nsteps)
-        # results.append(sampler.chain)
-        samples = sampler.chain[:, nsteps//2:, :].reshape(-1, ndim)
-        pr = np.array([np.exp(_lnprob(sample, wl, sed_avg[i], bkgerr_avg)) 
-                       for sample in samples])
-        results = sampler.chain
+                                        args=(wl, sed_avg[i], inv_sigma2))
+        
+        round_ = 0
+        max_lnpr = -1000
+        while((max_lnpr < lim_lnprob) & (round_ < nrounds)):
+            sampler.run_mcmc(pos, nsteps)
+            # results.append(sampler.chain)
+            samples = sampler.chain[:, nsteps//2:, :].reshape(-1, ndim)
+            pr = np.array([np.exp(_lnprob(sample, wl, sed_avg[i], inv_sigma2)) 
+                           for sample in samples]).reshape(-1, 1)
+            max_lnpr = np.log(np.max(pr))
+            if not first_time_lnpr[i]:
+                first_time_lnpr[i] = max_lnpr
+            round_ += 1
+        best_lnpr[i] = max_lnpr
+        final_runstep[i] = round_ * nsteps
+        print('First time lnpr:', first_time_lnpr[i], '; Final lnpr:',
+              best_lnpr[i], '; Final run steps:', final_runstep[i])
+        # results = sampler.chain
         z_ptt = np.sum(pr)
         # Saving results to popt and perr
-        sexp = np.sum(samples[:, 0]*pr) / z_ptt
-        texp = np.sum(samples[:, 1]*pr) / z_ptt
-        popt[bin_] = np.array([sexp, texp])
-        serr = np.sqrt(np.sum((samples[:, 0] - sexp)**2 * pr)/z_ptt)
-        terr = np.sqrt(np.sum((samples[:, 1] - texp)**2 * pr)/z_ptt)
-        perr[bin_] = np.array([serr, terr])
-    print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+        popt[bin_] = np.sum(samples * pr, axis=0) / z_ptt
+        perr[bin_] = np.sqrt(np.sum((samples - popt[bin_][0])**2 * pr, axis=0) 
+                             / z_ptt)
+        # Saving "max" method parameters
+        am = np.argmax(pr)
+        popt_max[bin_] = samples[am]
+        mk = (pr.reshape(-1) > (pr.reshape(-1)[am] * np.exp(-2.5)))
+        perr_max[bin_] = np.sqrt(np.sum((samples[mk] - samples[am])**2 * 
+                                         pr[mk], axis=0) / np.sum(pr[mk]))
         
+    print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+    
+    mask = final_runstep > nsteps
+    plt.figure()
+    plt.plot(final_runstep[mask], (best_lnpr[mask] - first_time_lnpr[mask]))
+    plt.xlabel('Final runsteps')
+    plt.ylabel('Improvement in lnpr')
     # Saving to h5 file
     # Total_gas and dust in M_sun/pc**2
     # Temperature in K
@@ -193,14 +309,18 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         grp.create_dataset('Dust_surface_density_err', data=perr[:, :, 0])
         grp.create_dataset('Dust_temperature', data=popt[:, :, 1])
         grp.create_dataset('Dust_temperature_err', data=perr[:, :, 1])
+        grp.create_dataset('Dust_surface_density_max', data=popt_max[:, :, 0])
+        grp.create_dataset('Dust_surface_density_err_max', 
+                           data=perr_max[:, :, 0])
+        grp.create_dataset('Dust_temperature_max', data=popt_max[:, :, 1])
+        grp.create_dataset('Dust_temperature_err_max', data=perr_max[:, :, 1])
         grp.create_dataset('Binmap', data=binmap)
         grp.create_dataset('Galaxy_distance', data=D)
         grp.create_dataset('Galaxy_center', data=glx_ctr)
         grp.create_dataset('INCL', data=INCL)
         grp.create_dataset('PA', data=PA)
         grp.create_dataset('PS', data=PS)
-        grp.create_dataset('Bin_xBar', data=xBar)
-        grp.create_dataset('Bin_yBar', data=yBar)
+        grp.create_dataset('Radius_map', data=radiusmap) # kpc
     print("Datasets saved.")
 
     ## Code for plotting the results
@@ -277,7 +397,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=200):
         plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_corner.png')
     """
 
-def read_dust_file(name='NGC_3198', bins=10, off=30):
+def read_dust_file(name='NGC_3198', bins=10, off=-30):
     # name = 'NGC_3198'
     # bins = 10
     with File('output/dust_data.h5', 'r') as hf:
@@ -286,42 +406,59 @@ def read_dust_file(name='NGC_3198', bins=10, off=30):
         serr = np.array(grp.get('Dust_surface_density_err'))
         texp = np.array(grp.get('Dust_temperature'))
         terr = np.array(grp.get('Dust_temperature_err'))
+        smax = np.array(grp.get('Dust_surface_density_max'))
+        smerr = np.array(grp.get('Dust_surface_density_err_max'))
+        tmax = np.array(grp.get('Dust_temperature_max'))
+        tmerr = np.array(grp.get('Dust_temperature_err_max'))
         total_gas = np.array(grp.get('Total_gas'))
         sed = np.array(grp.get('Herschel_SED'))
         bkgerr = np.array(grp.get('Herschel_binned_bkg'))
         binmap = np.array(grp.get('Binmap'))
+        radiusmap = np.array(grp.get('Radius_map')) # kpc
         # readme = np.array(grp.get('readme'))
     
-    upper_bound = np.full_like(sexp, np.nan)
     lnprob = np.full_like(sexp, np.nan)
+    lnprob_m = np.full_like(sexp, np.nan)
     binlist = np.unique(binmap[~np.isnan(binmap)])
     for bin_ in binlist:
         mask = binmap == bin_
-        sed[mask] = np.nanmean(sed[mask], axis=0)
         calerr2 = calerr_matrix2 * sed[mask][0]**2
         inv_sigma2 = 1 / (bkgerr[mask][0]**2 + calerr2)
-        upper_bound[mask] = 0.5 * np.sum(np.log(inv_sigma2))
         lnprob[mask] = _lnprob([sexp[mask][0], texp[mask][0]], wl, 
-                               sed[mask][0], bkgerr[mask][0])
-        if upper_bound[mask][0] - lnprob[mask][0] > off:
-            sexp[mask] = np.nan
-            texp[mask] = np.nan
-            serr[mask] = np.nan
-            terr[mask] = np.nan
-            upper_bound[mask] = np.nan
-            lnprob[mask] = np.nan
+                               sed[mask][0], inv_sigma2)
+        lnprob_m[mask] = _lnprob([smax[mask][0], tmax[mask][0]], wl, 
+                                 sed[mask][0], inv_sigma2)
+        if lnprob[mask][0] < off:
+            sexp[mask], texp[mask], serr[mask], terr[mask], lnprob[mask] = \
+                np.nan, np.nan, np.nan, np.nan, np.nan
+        if lnprob_m[mask][0] < off:
+            smax[mask], tmax[mask], smerr[mask], tmerr[mask], lnprob_m[mask] \
+                = np.nan, np.nan, np.nan, np.nan, np.nan
+        
+    plt.figure()
+    plt.subplot(121)
+    imshowid(lnprob)
+    plt.title('lnprob (exp)')
+    plt.subplot(122)
+    imshowid(lnprob_m)
+    plt.title('lnprob (max)')
     
     plt.figure()
     plt.subplot(131)
-    imshowid(upper_bound)
-    plt.title('upper_bound')
+    plt.scatter(lnprob.flatten(), lnprob_m.flatten())
+    plt.xlabel('lnprob (exp)')
+    plt.ylabel('lnprob (max)')
+    plt.title('lnprob')    
     plt.subplot(132)
-    imshowid(lnprob)
-    plt.title('lnprob')
+    plt.scatter(sexp.flatten(), smax.flatten())
+    plt.xlabel('surface mass density (exp)')
+    plt.ylabel('surface mass density (max)')
+    plt.title('surface mass density')    
     plt.subplot(133)
-    imshowid(upper_bound - lnprob)
-    plt.title('diff')
-    plt.suptitle(name)
+    plt.scatter(texp.flatten(), tmax.flatten())
+    plt.xlabel('temperature (exp)')
+    plt.ylabel('temperature (max)')
+    plt.title('temperature')    
     
     dgr = sexp / total_gas
     
@@ -343,7 +480,27 @@ def read_dust_file(name='NGC_3198', bins=10, off=30):
     plt.title('Temperature uncertainty')
     plt.suptitle(name)
     plt.savefig('output/' + name + '_fitting_results.png')
+
+    plt.figure()
+    plt.subplot(231)
+    imshowid(np.log10(total_gas))
+    plt.title('Total gas (log)')
+    plt.subplot(232)
+    imshowid(smax)
+    plt.title('Surface density (max)')
+    plt.subplot(233)
+    imshowid(tmax)
+    plt.title('Temperature (max)')
+    plt.subplot(235)
+    imshowid(smerr)
+    plt.title('Surface density uncertainty (max)')
+    plt.subplot(236)
+    imshowid(tmerr)
+    plt.title('Temperature uncertainty (max)')
+    plt.suptitle(name)
+    plt.savefig('output/' + name + '_fitting_results.png')
     
+    """
     plt.figure()
     plt.subplot(121)
     plt.hist(np.log10(sexp[sexp>0]), bins = bins)
@@ -353,6 +510,14 @@ def read_dust_file(name='NGC_3198', bins=10, off=30):
     plt.title('Temperature distribution')
     plt.suptitle(name)
     plt.savefig('output/' + name + '_fitting_hist.png')
+    """
+    plt.figure()
+    plt.hexbin(smax.flatten(), tmax.flatten(), total_gas.flatten(), norm=1)
+    plt.colorbar()
+    plt.title('Gas mass weighted distribution')
+    plt.xlabel(r'Surface mass density ($M_\odot / pc^2$)')
+    plt.ylabel(r'Temeprature ($K$)')
+    plt.savefig('output/' + name + '_fitting_hex.png')
 
     plt.figure()
     plt.subplot(131)

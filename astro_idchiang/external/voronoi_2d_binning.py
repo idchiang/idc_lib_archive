@@ -365,8 +365,9 @@ def _accretion(x, y, signal, noise, targetSN, pixelSize, quiet, sn_func):
             # (2) Estimate the `roundness' of the POSSIBLE new bin
             #
             nextBin = np.append(currentBin, unBinned[k])
+            """ roundness temperarily disabled
             roundness = _roundness(x[nextBin], y[nextBin], pixelSize)
-
+            """
             # (3) Compute the S/N one would obtain by adding
             # the CANDIDATE pixel to the current bin
             #
@@ -377,7 +378,7 @@ def _accretion(x, y, signal, noise, targetSN, pixelSize, quiet, sn_func):
             # current bin, (2) whether the POSSIBLE new bin is round enough
             # and (3) whether the resulting S/N would get closer to targetSN
             #
-            if (np.sqrt(minDist) > 1.2*pixelSize or roundness > 0.3
+            if (np.sqrt(minDist) > 1.2*pixelSize # or roundness > 0.3
                 or abs(SN - targetSN) > abs(SNOld - targetSN) or SNOld > SN):
                 if SNOld > 0.8*targetSN:
                     good[currentBin] = 1
@@ -458,11 +459,11 @@ def _cvt_equal_mass(x, y, signal, noise, xnode, ynode, quiet, wvt, sn_func):
     else:
         dens = (signal/noise)**2  # See beginning of section 4.1 of CC03
     scale = np.ones_like(xnode)   # Start with the same scale length for all bins
-
+    
     for it in range(1, xnode.size):  # Do at most xnode.size iterations
-
+        
         xnodeOld, ynodeOld = xnode.copy(), ynode.copy()
-
+        
         # Computes (Weighted) Voronoi Tessellation of the pixels grid
         #
         if x.size < 10000:
@@ -471,7 +472,7 @@ def _cvt_equal_mass(x, y, signal, noise, xnode, ynode, quiet, wvt, sn_func):
             classe = np.zeros(x.size, dtype=int)
             for j, (xj, yj) in enumerate(zip(x, y)):
                 classe[j] = np.argmin(((xj - xnode)**2 + (yj - ynode)**2)/scale**2)
-
+        
         # Computes centroids of the bins, weighted by dens**2.
         # Exponent 2 on the density produces equal-mass Voronoi bins.
         # The geometric centroids are computed if WVT keyword is set.
@@ -483,15 +484,14 @@ def _cvt_equal_mass(x, y, signal, noise, xnode, ynode, quiet, wvt, sn_func):
             if wvt:
                 sn = sn_func(index, signal, noise)
                 scale[k] = np.sqrt(index.size/sn)  # Eq. (4) of Diehl & Statler (2006)
-
+        
         diff = np.sum((xnode - xnodeOld)**2 + (ynode - ynodeOld)**2)
-
+        
         if not quiet:
             print('Iter: %4i  Diff: %.4g' % (it, diff))
-
+        
         if diff == 0:
             break
-
     # If coordinates have changed, re-compute (Weighted) Voronoi Tessellation of the pixels grid
     #
     if diff > 0:
@@ -502,9 +502,8 @@ def _cvt_equal_mass(x, y, signal, noise, xnode, ynode, quiet, wvt, sn_func):
             for j, (xj, yj) in enumerate(zip(x, y)):
                 classe[j] = np.argmin(((xj - xnode)**2 + (yj - ynode)**2)/scale**2)
         good = np.unique(classe)  # Check for zero-size Voronoi bins
-
     # Only return the generators and scales of the nonzero Voronoi bins
-
+    
     return xnode[good], ynode[good], scale[good], it
 
 #-----------------------------------------------------------------------
@@ -566,7 +565,7 @@ def _display_pixels(x, y, counts, pixelSize):
 
 #----------------------------------------------------------------------
 
-def voronoi_2d_binning(x, y, signal, noise, targetSN, cvt=True,
+def voronoi_2d_binning_m(x, y, signal, noise, targetSN, cvt=True,
                          pixelsize=None, plot=True, quiet=True,
                          sn_func=None, wvt=True):
     """
@@ -622,10 +621,14 @@ def voronoi_2d_binning(x, y, signal, noise, targetSN, cvt=True,
     print('Bin-accretion...')
     classe, pixelsize = _accretion(x, y, signal, noise, targetSN, pixelsize, quiet, sn_func)
     print(np.max(classe), ' initial bins.')
+    """ Modified: reassign all-bad bins """
+    if np.sum(classe) == 0:
+        classe = np.ones(classe.shape, dtype=int)
+        classe[-1] = 0
     print('Reassign bad bins...')
     xNode, yNode = _reassign_bad_bins(classe, x, y)
     print(xNode.size, ' good bins.')
-    if cvt:
+    if cvt and (xNode.size > 1):
         print('Modified Lloyd algorithm...')
         xNode, yNode, scale, it = _cvt_equal_mass(x, y, signal, noise, xNode, yNode, quiet, wvt, sn_func)
         print(it - 1, ' iterations.')
