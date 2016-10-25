@@ -9,8 +9,8 @@ import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy.constants import c, h, k_B
 # import corner
-from external import voronoi_2d_binning_m
-from plot_idchiang import imshowid
+from astro_idchiang.external import voronoi_2d_binning_m
+from .plot_idchiang import imshowid
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
@@ -211,7 +211,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=200, nrounds=10,
             plt.figure()
             binNum_l, xNode, yNode, xBar, yBar, sn, nPixels, scale = \
                 voronoi_2d_binning_m(x_l, y_l, signal_l, noise_l, targetSN, 
-                                     pixelsize=1, plot=True, quiet=True)
+                                     pixelsize=1, plot=False, quiet=True)
         binNum_l += max_binNum
         max_binNum = np.max(binNum_l)
         binNum[masks[i]] = binNum_l
@@ -446,16 +446,28 @@ def read_dust_file(name='NGC_3198', bins=10, off=-30):
     plt.figure()
     plt.subplot(131)
     plt.scatter(lnprob.flatten(), lnprob_m.flatten())
+    oneone = np.linspace(-30, 0)
+    plt.plot(oneone, oneone)
+    plt.xlim([np.nanmin(lnprob[~np.isinf(lnprob)]), np.nanmax(lnprob)])
+    plt.ylim([np.nanmin(lnprob_m[~np.isinf(lnprob_m)]), np.nanmax(lnprob_m)])
     plt.xlabel('lnprob (exp)')
     plt.ylabel('lnprob (max)')
     plt.title('lnprob')    
     plt.subplot(132)
     plt.scatter(sexp.flatten(), smax.flatten())
+    oneone = np.linspace(0, max(np.nanmax(sexp), np.nanmax(smax)) + 10)
+    plt.plot(oneone, oneone)
+    plt.xlim([np.nanmin(sexp), np.nanmax(sexp)])
+    plt.ylim([np.nanmin(smax), np.nanmax(smax)])
     plt.xlabel('surface mass density (exp)')
     plt.ylabel('surface mass density (max)')
     plt.title('surface mass density')    
     plt.subplot(133)
     plt.scatter(texp.flatten(), tmax.flatten())
+    oneone = np.linspace(0, max(np.nanmax(texp), np.nanmax(tmax)) + 10)
+    plt.plot(oneone, oneone)
+    plt.xlim([np.nanmin(texp), np.nanmax(texp)])
+    plt.ylim([np.nanmin(tmax), np.nanmax(tmax)])
     plt.xlabel('temperature (exp)')
     plt.ylabel('temperature (max)')
     plt.title('temperature')    
@@ -511,6 +523,8 @@ def read_dust_file(name='NGC_3198', bins=10, off=-30):
     plt.suptitle(name)
     plt.savefig('output/' + name + '_fitting_hist.png')
     """
+    
+    """
     plt.figure()
     plt.hexbin(smax.flatten(), tmax.flatten(), total_gas.flatten(), norm=1)
     plt.colorbar()
@@ -518,6 +532,7 @@ def read_dust_file(name='NGC_3198', bins=10, off=-30):
     plt.xlabel(r'Surface mass density ($M_\odot / pc^2$)')
     plt.ylabel(r'Temeprature ($K$)')
     plt.savefig('output/' + name + '_fitting_hex.png')
+    """
 
     plt.figure()
     plt.subplot(131)

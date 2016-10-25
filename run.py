@@ -22,7 +22,7 @@ Corner:
 from astro_idchiang import Surveys, read_dust_file
 from astro_idchiang import fit_dust_density as fdd
 from astro_idchiang import imshowid
-all_objects = ['DDO53', 'DDO154', 'HO_I', 'HO_II', 'IC_2574', 'M81_DWB', 
+all_objects = ['DDO53', 'DDO154', 'HO_I', 'HO_II', 'IC_2574',
                'NGC_628', 'NGC_925', 'NGC_2841', 'NGC_2976', 'NGC_3077', 
                'NGC_3184', 'NGC_3198', 'NGC_3351', 'NGC_3521', 'NGC_3627', 
                'NGC_4736', 'NGC_5055', 'NGC_5457', 'NGC_6946', 'NGC_7331']
@@ -46,6 +46,5 @@ def generator():
     
 def fitting():
     for object_ in all_objects:
-        object_ = 'NGC_628'
         fdd(object_, nwalkers=20, nsteps=200)
         read_dust_file(object_, bins=10, off=30)
