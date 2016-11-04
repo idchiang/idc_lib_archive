@@ -42,3 +42,4 @@ from io_idchiang import *
 from plot_idchiang import *
 from dustfit_idchiang import *
 from regrid_idchiang import *
+from natural_units_idchiang import *
