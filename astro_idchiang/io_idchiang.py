@@ -3,6 +3,8 @@ from __future__ import absolute_import, division, print_function, \
 range = xrange
 import os
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
