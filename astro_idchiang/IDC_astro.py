@@ -10,6 +10,8 @@ from astropy.constants import M_sun, m_p, c, h, k_B
 from astropy.convolution import convolve_fft
 from astropy.io import fits
 # Third party libraries
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
