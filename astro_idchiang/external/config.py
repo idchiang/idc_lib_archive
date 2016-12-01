@@ -1,20 +1,9 @@
 import numpy as np
 import os
 
-
-if os.getcwd().startswith('/Users/alexialewis/'):
-    #_GALBASE_DIR = '/Users/alexialewis/research/galbase/'
-    #_GALDATA_DIR = '/Users/alexialewis/research/galbase/galbase/gal_data/'
-    _GALBASE_DIR = '/Users/alexialewis/python/akl_galbase/gal_data'
-    _GALDATA_DIR = _GALBASE_DIR
-elif os.getcwd().startswith('C:\\Users\\jiang'):
-    this_dir, this_filename = os.path.split(__file__)
-    _GALBASE_DIR = os.path.join(this_dir, "gal_data")
-    _GALDATA_DIR = os.path.join(this_dir, "gal_data")
-else:
-    _GALBASE_DIR = '/home/maury/leroy.42/idl/galbase/gal_data/'
-    _GALDATA_DIR = _GALBASE_DIR
-
+this_dir, this_filename = os.path.split(__file__)
+_GALBASE_DIR = os.path.join(this_dir, "gal_data")
+_GALDATA_DIR = os.path.join(this_dir, "gal_data")
 
 PROP_ARRAY = np.asarray([['name', object, ''],
               ['pgc', int, 0],
