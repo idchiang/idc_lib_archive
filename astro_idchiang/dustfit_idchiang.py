@@ -4,7 +4,7 @@ range = xrange
 import matplotlib
 matplotlib.use('Agg')
 from time import clock
-import emcee
+# import emcee
 from h5py import File
 import matplotlib.pyplot as plt
 import numpy as np
@@ -262,33 +262,34 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         lnprobs = -0.5 * (np.sum((sed_avg[i] - models)**2 * inv_sigma2, 
                                  axis=2))
         """ Show map """
-        plt.figure()
-        imshowid(np.log10(-lnprobs))
-        
-        am = np.argmax(lnprobs)
-        sopt, topt = 10**logsigmas.flatten()[am], Ts.flatten()[am]
-        """ MCMC PDF Generating """
-        return logsigmas, Ts, lnprobs, topt, sopt, wl, sed_avg[i], inv_sigma2
-        temp0 = np.random.uniform(topt * 0.99, topt * 1.01, [nwalkers, 1])
-        sigma0 = np.random.uniform(sopt * 0.99, sopt * 1.01, [nwalkers, 1])
-        pos = np.concatenate([sigma0, temp0], axis=1)
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, _lnprob,
-                                        args=(wl, sed_avg[i], inv_sigma2))
-        sampler.run_mcmc(pos, nsteps)
-        samples = sampler.chain[:, 50:, :]
+        ##plt.figure()
+        ##imshowid(np.log10(-lnprobs))
+
         """ Randomly choosing something to plot here """
-        """
-        if np.random.rand() > 0.0:
-            plot_single_bin(name, binNumlist[i], samples, sed_avg[i], 
-                            inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
-        break
-        """
+        ##if np.random.rand() > 0.0:
+        ##    plot_single_bin(name, binNumlist[i], samples, sed_avg[i], 
+        ##                    inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
         """ Continue saving """
-        samples = samples.reshape(-1, ndim)
-        sss = np.percentile(samples[:, 0], [16, 50, 84])
-        sst = np.percentile(samples[:, 1], [16, 50, 84])
+        mask = lnprobs > np.max(lnprobs) - 6
+        lnprobs_cp, logsigmas_cp, Ts_cp = \
+            lnprobs[mask], logsigmas[mask], Ts[mask]
+        pr = np.exp(lnprobs_cp)
+        #
+        ids = np.argsort(logsigmas_cp)
+        logsigmas_cp = logsigmas_cp[ids]
+        prs = pr[ids]
+        csp = np.cumsum(prs)[:-1]
+        csp = np.append(0, csp / csp[-1])
+        sss = np.interp([0.16, 0.5, 0.84], csp, 10**logsigmas_cp).tolist()
+        #
+        idT = np.argsort(Ts_cp)
+        Ts_cp = Ts_cp[idT]
+        prT = pr[idT]
+        csp = np.cumsum(prT)[:-1]
+        csp = np.append(0, csp / csp[-1])
+        sst = np.interp([0.16, 0.5, 0.84], csp, Ts_cp).tolist()
         """ Saving to results """
-        popt[bin_] = np.array([sopt, topt])
+        popt[bin_] = np.array([sss[1], sst[1]])
         perr[bin_] = np.array([max(sss[2]-sss[1], sss[1]-sss[0]), 
                                max(sst[2]-sst[1], sst[1]-sst[0])])
         
@@ -321,6 +322,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     print("Datasets saved.")
 
 ## Code for plotting the results
+
 def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt, 
                     lnprobs, Ts, logsigmas):
     bins = 50
@@ -349,7 +351,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     plt.title('ln(Probability)')        
     plt.suptitle(name + ' bin no.' + str(binnum) + ' mcmc')
     plt.savefig('output/' + name + 'bin_' + str(binnum) + 'mcmc.png')
-
+    plt.clf()
     # MCMC Corner plot
     samples = samples.reshape(-1, ndim + 1)
     smax = np.max(samples[:,0])
@@ -365,6 +367,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
                   show_titles=True)
     plt.suptitle(name + ' bin no.' + str(binnum) + ' mcmc corner plot')
     plt.savefig('output/' + name + 'bin_' + str(binnum) + 'mcmc_corner.png')
+    plt.clf()
     
     # PDF from grid-based method
     lnprobs = lnprobs.flatten()
@@ -381,7 +384,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
                   show_titles=True, weights=prs)
     plt.suptitle('Grid-based PDF')
     plt.savefig('output/' + name + 'bin_' + str(binnum) + 'grid_pdf.png')
-
+    plt.clf()
     """
     # Plotting data versus model
     n = 50
@@ -453,8 +456,8 @@ def read_dust_file(name='NGC3198', bins=10, off=-22.5):
     imshowid(terr)
     plt.title('Temperature uncertainty')
     plt.savefig('output/' + name + '_fitting_results.png')
+    plt.clf()
 
-    plt.figure()
     plt.subplot(221)
     imshowid(np.log10(total_gas))
     plt.title('Total gas (log)')
@@ -468,8 +471,8 @@ def read_dust_file(name='NGC3198', bins=10, off=-22.5):
     imshowid(topt)
     plt.title('Temperature')
     plt.savefig('output/' + name + '_fitting_results2.png')
+    plt.clf()
    
-    plt.figure()
     plt.subplot(311)
     plt.hist(np.log10(sopt[sopt>0]), bins = bins, weights=total_gas[sopt>0])
     plt.title('Gas weighted surface density (log)')
@@ -481,8 +484,8 @@ def read_dust_file(name='NGC3198', bins=10, off=-22.5):
     plt.hist(np.log10(dgr[dgr>0]), bins = bins, weights=total_gas[dgr>0])
     plt.title('Gas weighted DGR (log)')
     plt.savefig('output/' + name + '_weighted_hist.png')
+    plt.clf()
 
-    plt.figure()
     plt.subplot(121)    
     plt.scatter(total_gas.flatten(), sopt.flatten())
     plt.xlabel(r'Total gas surface mass density ($M_\odot/pc^2$)')
@@ -495,14 +498,14 @@ def read_dust_file(name='NGC3198', bins=10, off=-22.5):
     plt.title('Log scale')
     plt.suptitle('Total gas vs. dust')
     plt.savefig('output/' + name + '_gas_vs_dust.png')
+    plt.clf()
 
     ## D in Mpc. Need r25 in kpc
-    r25 = gal_data(name).field('R25_DEG')[0]
+    r25 = gal_data([name]).field('R25_DEG')[0]
     r25 *= (np.pi / 180.) * (D * 1E3)
     binlist = np.unique(binmap)
     r_reduced = np.array([radiusmap[binmap==temp][0] for temp in binlist])
     dgr_reduced = np.array([dgr[binmap==temp][0] for temp in binlist])
-    plt.figure()
     plt.subplot(121)    
     """ DGR profile """
     plt.scatter(r_reduced, dgr_reduced)
@@ -514,6 +517,7 @@ def read_dust_file(name='NGC3198', bins=10, off=-22.5):
     plt.ylabel(r'Dust-to-Gas-Ratio')
     plt.suptitle('DGR profile')
     plt.savefig('output/' + name + '_dgr_profile.png')
+    plt.clf()
 
 """
 def reject_outliers(data, sig=2.):
