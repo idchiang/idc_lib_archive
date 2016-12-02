@@ -18,6 +18,15 @@ from . import regrid_idchiang as ric
 
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 
+"""
+HOI UGC05139
+HOII UGC04305
+M81DWA PGC023521
+M81DWB UGC05423
+DDO053 UGC04459
+DDO154 NGC4789A
+"""
+
 def read_h5(filename):
     """
     Inputs:
@@ -105,46 +114,50 @@ class Surveys(object):
             filename: <str>
                 Filename of file to be read (default None)
         """
-        continuing = True
-        
-        for i in range(len(name)):
-            if name[i] in list(' _0'):
-                name1 = name[:i]
-                name2 = name[i+1:]
-                break
-            elif name[i] in list('123456789'):
-                name1 = name[:i]
-                name2 = name[i:]
-                break
+        name = name.replace('_', '').replace(' ', '').upper()
+        if name == 'UGC05139':
+            name1, name2 = 'HO', 'I'
+        elif name == 'UGC04305':
+            name1, name2 = 'HO', 'II'
+        elif name == 'PGC023521':
+            name1, name2 = 'M81', 'dwA'
+        elif name == 'UGC05423':
+            name1, name2 = 'M81', 'dwB'
+        elif name == 'UGC04459':
+            name1, name2 = 'DDO', '053'
+        elif name == 'NGC4789A':
+            name1, name2 = 'DDO', '154'
+        elif name[:3] == 'NGC':
+            name1, name2 = 'NGC', name[3:]
+        elif name[:2] == 'IC':
+            name1, name2 = 'IC', name[2:]
+        else:
+            raise ValueError(name + ' not in database.')
+        if survey == 'THINGS':
+            name2 = name2.lstrip('0')
 
-        if name1 == 'M':
+        if name1 == 'M81':
             if survey == 'THINGS':
-                filename = 'data/THINGS/M81_DWB_NA_MOM0_THINGS.FITS'
+                filename = 'data/THINGS/M81_' + name2.upper() + '_NA_MOM0_THINGS.FITS'
             elif survey == 'SPIRE_500':
-                filename = 'data/SPIRE/M81dwB_I_500um_scan_k2011.fits.gz'
+                filename = 'data/SPIRE/M81' + name2 + '_I_500um_scan_k2011.fits.gz'
             elif survey == 'SPIRE_350':
-                filename = 'data/SPIRE/M81dwB_I_350um_scan_k2011.fits.gz'
+                filename = 'data/SPIRE/M81' + name2 + '_I_350um_scan_k2011.fits.gz'
             elif survey == 'SPIRE_250':
-                filename = 'data/SPIRE/M81dwB_I_250um_scan_k2011.fits.gz'
+                filename = 'data/SPIRE/M81' + name2 + '_I_250um_scan_k2011.fits.gz'
             elif survey == 'PACS_160':
-                filename = 'data/PACS/M81dwB_I_160um_k2011.fits.gz'
+                filename = 'data/PACS/M81' + name2 + '_I_160um_k2011.fits.gz'
             elif survey == 'PACS_100':
-                filename = 'data/PACS/M81dwB_I_100um_k2011.fits.gz'
+                filename = 'data/PACS/M81' + name2 + '_I_100um_k2011.fits.gz'
             elif survey == 'HERACLES': 
-                filename = 'data/HERACLES/m81dwb_heracles_mom0.fits.gz'
+                filename = 'data/HERACLES/m81' + name2.lower() + '_heracles_mom0.fits.gz'
             else:
-                continuing = False
-                print("Warning: Survey not supported yet!!", 
-                      "Please check or enter file name directly.")
+                raise ValueError(survey + ' not supported.')
         elif name1 == 'DDO' and survey == 'THINGS':
             filename = 'data/THINGS/' + name1 + name2 + '_NA_MOM0_THINGS.FITS'
         elif survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
                         'PACS_100', 'HERACLES']:
-            if name1.upper() == 'NGC' and len(name2) == 3:
-                name2 = '0' + name2
-            elif name1.upper() == 'DDO' and len(name2) == 2:
-                name2 = '0' + name2
-            elif name1.upper() == 'HO':
+            if name1 == 'HO':
                 if survey in ['SPIRE_500', 'SPIRE_350', 'SPIRE_250']:
                     name1 = 'Holmberg'
                 elif survey in ['PACS_160', 'PACS_100']:
@@ -175,69 +188,66 @@ class Surveys(object):
                 filename = 'data/HERACLES/' + name1.lower() + name2 + \
                            '_heracles_mom0.fits.gz'
             else:
-                continuing = False
-                print("Warning: Survey not supported yet!!", 
-                      "Please check or enter file name directly.")
+                raise ValueError(survey + ' not supported.')
 
-        if continuing:
-            try:
-                s = self.galaxy_data.loc[name].copy()
-                del s['TBMIN'], s['TBMAJ'], s['TBPA']
-                data, hdr = fits.getdata(filename, 0, header=True)
+        try:
+            s = self.galaxy_data.loc[name].copy()
+            del s['TBMIN'], s['TBMAJ'], s['TBPA']
+            data, hdr = fits.getdata(filename, 0, header=True)
 
-                if survey == 'THINGS':
-                    # THINGS: Raw data in JY/B*M. Change to
-                    # column density 1/cm^2    
-                    data = data[0, 0]
-                    data *= 1.823E18 * 6.07E5 / 1.0E3 / s.BMAJ / s.BMIN                
-                elif survey == 'HERACLES':
-                    # HERACLES: Raw data in K*km/s. Change to
-                    # column density 1/cm^2
-                    # This is a calculated parameter by fitting HI to H2 mass
-                    R21 = 0.8
-                    XCO = 2.0E20
-                    data *= XCO * (R21 / 0.8)
-                else:
-                    if survey in ['PACS_160', 'PACS_100']:
-                        data = data[0]
-                    # print survey + " not supported for density calculation!!"
-
-                w = wcs.WCS(hdr, naxis=2)
-                # add the generated data to dataframe
-                s['WCS'], s['MAP'], s['L'] = w, data, np.array(data.shape)
-                ctr = s.L // 2
-                ps = np.zeros(2)
-                xs, ys = \
-                    w.wcs_pix2world([ctr[0] - 1, ctr[0] + 1, ctr[0], ctr[0]],
-                                    [ctr[1], ctr[1], ctr[1] - 1, ctr[1] + 1], 
-                                    1)
-                ps[0] = np.abs(xs[0] - xs[1]) / 2 * \
-                        np.cos((ys[0] + ys[1]) * np.pi / 2 / 180)
-                ps[1] = np.abs(ys[3] - ys[2]) / 2
-                ps *= u.degree.to(u.arcsec)
+            if survey == 'THINGS':
+                # THINGS: Raw data in JY/B*M. Change to
+                # column density 1/cm^2    
+                data = data[0, 0]
+                data *= 1.823E18 * 6.07E5 / 1.0E3 / s.BMAJ / s.BMIN                
+            elif survey == 'HERACLES':
+                # HERACLES: Raw data in K*km/s. Change to
+                # column density 1/cm^2
+                # This is a calculated parameter by fitting HI to H2 mass
+                R21 = 0.8
+                XCO = 2.0E20
+                data *= XCO * (R21 / 0.8)
+            else:
                 if survey in ['PACS_160', 'PACS_100']:
-                    # Converting Jy/pixel to MJy/sr
-                    data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
-                s['PS'] = ps
-                s['CVL_MAP'] = np.zeros([1, 1])
-                s['RGD_MAP'] = np.zeros([1, 1])
-                s['CAL_MASS'] = 0
-                s['DP_RADIUS'] = self.dp_radius(s) if \
-                    (survey == 'SPIRE_500') else np.zeros([1, 1])
-                s['RVR'] = np.zeros([1, 1])
-                """
-                if cal:
-                    print "Calculating " + name + "..."
-                    s['CAL_MASS'] = self.total_mass(s)
-                    s['RVR'] = self.Radial_prof(s)
-                """
-                # Update DataFrame
-                self.df = \
-                    self.df.append(s.to_frame().T.set_index([[name],[survey]]))
-            except KeyError:
-                print("Warning:", name, "not in csv database!!")
-            except IOError:
-                print("Warning:", filename ,"doesn't exist!!")
+                    data = data[0]
+                # print survey + " not supported for density calculation!!"
+
+            w = wcs.WCS(hdr, naxis=2)
+            # add the generated data to dataframe
+            s['WCS'], s['MAP'], s['L'] = w, data, np.array(data.shape)
+            ctr = s.L // 2
+            ps = np.zeros(2)
+            xs, ys = \
+                w.wcs_pix2world([ctr[0] - 1, ctr[0] + 1, ctr[0], ctr[0]],
+                                [ctr[1], ctr[1], ctr[1] - 1, ctr[1] + 1], 
+                                1)
+            ps[0] = np.abs(xs[0] - xs[1]) / 2 * \
+                    np.cos((ys[0] + ys[1]) * np.pi / 2 / 180)
+            ps[1] = np.abs(ys[3] - ys[2]) / 2
+            ps *= u.degree.to(u.arcsec)
+            if survey in ['PACS_160', 'PACS_100']:
+                # Converting Jy/pixel to MJy/sr
+                data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
+            s['PS'] = ps
+            s['CVL_MAP'] = np.zeros([1, 1])
+            s['RGD_MAP'] = np.zeros([1, 1])
+            s['CAL_MASS'] = 0
+            s['DP_RADIUS'] = self.dp_radius(s) if \
+                (survey == 'SPIRE_500') else np.zeros([1, 1])
+            s['RVR'] = np.zeros([1, 1])
+            """
+            if cal:
+                print "Calculating " + name + "..."
+                s['CAL_MASS'] = self.total_mass(s)
+                s['RVR'] = self.Radial_prof(s)
+            """
+            # Update DataFrame
+            self.df = \
+                self.df.append(s.to_frame().T.set_index([[name],[survey]]))
+        except KeyError:
+            print("Warning:", name, "not in csv database!!")
+        except IOError:
+            print("Warning:", filename ,"doesn't exist!!")
 				
     def add_kernel(self, name1s, name2, FWHM1s=[], FWHM2=None, filenames=[]):
         """   

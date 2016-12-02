@@ -2,24 +2,6 @@ import astropy.io.fits as pyfits
 import os
 import numpy as np
 from pdb import set_trace
-import config
-
-
-def empty_gal_struct(n):
-    init_vals = config.INIT_VALS
-    columns = config.COLUMNS
-    ts = config.COL_TYPES
-
-    dtype = (zip(columns, ts))
-    empty = np.recarray((n,),
-                        dtype=dtype)
-
-    for i in range(len(empty)):
-        for j in range(len(empty[i])):
-            empty[i][j] = init_vals[j]
-
-    return empty
-
 
 def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
 
@@ -27,15 +9,13 @@ def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
         print('Need a name to find a galaxy. Returning empty structure')
         return None
 
-
     if not data_dir:
-        data_dira = config._GALDATA_DIR
-        data_dir = config._GALBASE_DIR
-
+        galbase_dir, this_filename = os.path.split(__file__)
+        galdata_dir = os.path.join(galbase_dir, "gal_data")
 
     # READ IN THE DATA
     if data is None:
-        dbfile = os.path.join(data_dir, 'gal_base.fits')
+        dbfile = os.path.join(galdata_dir, 'gal_base.fits')
         hdulist = pyfits.open(dbfile)
         data = hdulist[1].data
         hdulist.close()
@@ -49,8 +29,8 @@ def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
     if tag is not None:
         n_data = len(data)
         keep = np.ones(n_data)
-        survey_file = os.path.join(data_dira, 'survey_' + tag.lower() + '.txt')
-        gals = np.genfromtxt(survey_file, dtype='string')
+        # survey_file = os.path.join(galdata_dir, 'survey_' + tag.lower() + '.txt')
+        # gals = np.genfromtxt(survey_file, dtype='string')
 
         for i in range(n_data):
             this_tag = data['tags'][i].strip(';').split(';;')
@@ -66,7 +46,7 @@ def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
 
     # BUILD ALIAS DICTIONARY
     aliases = {}
-    fname = os.path.join(data_dir, "gal_base_alias.txt")
+    fname = os.path.join(galdata_dir, "gal_base_alias.txt")
     f = open(fname)
     f.readline()
     f.readline()

@@ -23,18 +23,12 @@ import matplotlib
 matplotlib.use('Agg')
 from astro_idchiang import Surveys, read_dust_file
 from astro_idchiang import fit_dust_density as fdd
-from astro_idchiang import fit_dust_density_grid as fddg
 from astro_idchiang import imshowid
-all_objects = ['DDO53', 'DDO154', 'HO_I', 'HO_II', 'IC_2574',
-               'NGC_628', 'NGC_925', 'NGC_2841', 'NGC_2976', 'NGC_3077', 
-               'NGC_3184', 'NGC_3198', 'NGC_3351', 'NGC_3521', 'NGC_3627', 
-               'NGC_4736', 'NGC_5055', 'NGC_5457', 'NGC_6946', 'NGC_7331']
+problem = ['NGC6946']
                
-all_objects = ['IC_2574',
-               'NGC_628', 'NGC_925', 'NGC_2841', 'NGC_2976', 'NGC_3077', 
-               'NGC_3184', 'NGC_3198', 'NGC_3351', 'NGC_3521', 'NGC_3627', 
-               'NGC_4736', 'NGC_5055', 'NGC_5457', 'NGC_7331']
-
+all_objects = ['IC2574', 'NGC0628', 'NGC0925', 'NGC2841', 'NGC2976', 'NGC3077', 
+               'NGC3184', 'NGC3198', 'NGC3351', 'NGC3521', 'NGC3627', 
+               'NGC4736', 'NGC5055', 'NGC5457', 'NGC7331']
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', 
                'PACS_160', 'PACS_100', 'HERACLES']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
@@ -51,11 +45,7 @@ def generator():
     cmaps.WCS_congrid(all_objects, fine_surveys, 'SPIRE_500')
     cmaps.save_data(all_objects)
     
-def fitting(nwalkers=10, nsteps=500, nrounds=2):
+def fitting(nwalkers=20, nsteps=150):
     for object_ in all_objects:
-        fdd(object_, nwalkers=10, nsteps=500, nrounds=2)
+        fdd(object_, nwalkers=10, nsteps=500)
         read_dust_file(object_, bins=10, off=-22.5)
-
-def fitting_grid():
-    for object_ in all_objects:
-        fddg(object_)

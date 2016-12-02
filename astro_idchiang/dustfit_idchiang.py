@@ -1,17 +1,17 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 range = xrange
-import numpy as np
-from time import clock
-import emcee
-from h5py import File
 import matplotlib
 matplotlib.use('Agg')
+from time import clock
+# import emcee
+from h5py import File
 import matplotlib.pyplot as plt
+import numpy as np
 import astropy.units as u
 from astropy.constants import c, h, k_B
-# import corner
-from astro_idchiang.external import voronoi_2d_binning_m
+import corner
+from astro_idchiang.external import voronoi_2d_binning_m, gal_data
 from .plot_idchiang import imshowid
 
 # Dust fitting constants
@@ -76,8 +76,7 @@ def _lnprob(theta, x, y, inv_sigma2):
         return -np.inf
     return lp + _lnlike(theta, x, y, inv_sigma2)
 
-def fit_dust_density(name, nwalkers=10, nsteps=500, nrounds=2, 
-                     lim_lnprob=-10):
+def fit_dust_density(name, nwalkers=20, nsteps=150):
     """
     Inputs:
         df: <pandas DataFrame>
@@ -212,7 +211,6 @@ def fit_dust_density(name, nwalkers=10, nsteps=500, nrounds=2,
         if np.min(signal_l) > targetSN:
             binNum_l = np.arange(len(signal_l))
         else:
-            plt.figure()
             binNum_l, xNode, yNode, xBar, yBar, sn, nPixels, scale = \
                 voronoi_2d_binning_m(x_l, y_l, signal_l, noise_l, targetSN, 
                                      pixelsize=1, plot=False, quiet=True)
@@ -226,18 +224,30 @@ def fit_dust_density(name, nwalkers=10, nsteps=500, nrounds=2,
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     sed_avg = np.zeros([len(binNumlist), 5])
     
+    print("Generating grid...")
+    """ Grid parameters """
+    logsigma_step = 0.005
+    min_logsigma = -5.
+    max_logsigma = 3.
+    T_step = 0.05
+    min_T = T_step
+    max_T = 50.  
+    logsigmas = np.arange(min_logsigma, max_logsigma, logsigma_step)
+    Ts = np.arange(min_T, max_T, T_step)
+    logsigmas, Ts = np.meshgrid(logsigmas, Ts)
+    models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
+    for i in range(len(wl)):
+        models[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
+
     print("Start fitting", name, "dust surface density...")
     tic = clock()
-
-    best_lnpr = np.zeros(len(binNumlist))
-    first_time_lnpr = np.zeros(len(binNumlist))
-    final_runstep = np.zeros(len(binNumlist))
     p = 0
     # results = [] # array for saving all the raw chains
     for i in xrange(len(binNumlist)):
         if (i + 1) / len(binNumlist) > p:
             print('Step', (i + 1), '/', len(binNumlist))
             p += 0.1
+        """ Binning everything """
         bin_ = (binmap == binNumlist[i])
         radiusmap[bin_] = np.sum(dp_radius[bin_] * total_gas[bin_]) / \
                           np.sum(total_gas[bin_])  # total_gas weighted radius
@@ -248,46 +258,42 @@ def fit_dust_density(name, nwalkers=10, nsteps=500, nrounds=2,
         sed[bin_] = sed_avg[i]
         calerr2 = calerr_matrix2 * sed_avg[i]**2
         inv_sigma2 = 1 / (bkgerr_avg**2 + calerr2)
-        temp = WDC / wl[sed_avg[i].argsort()[-2:][::-1]]
-        temp0 = np.random.uniform(np.min(temp), np.max(temp), [nwalkers, 1])
-        init_sig = _sigma0(wl[np.argmax(sed_avg[i])], np.max(sed_avg[i]),
-                           np.mean(temp))
-        sigma0 = np.random.uniform(init_sig / 2, init_sig * 2, [nwalkers, 1])
-        pos = np.concatenate([sigma0, temp0], axis=1)
-        sampler = emcee.EnsembleSampler(nwalkers, ndim, _lnprob,
-                                        args=(wl, sed_avg[i], inv_sigma2))
-        round_ = 0
-        max_lnpr = -1000
-        while((max_lnpr < lim_lnprob) & (round_ < nrounds)):
-            print("Round", round_ + 1)
-            sampler.run_mcmc(pos, nsteps)
-            # results.append(sampler.chain)
-            samples = sampler.chain[:, sampler.chain.shape[1] // 2:, :] \
-                      .reshape(-1, ndim)
-            pr = np.array([np.exp(_lnprob(sample, wl, sed_avg[i], inv_sigma2)) 
-                           for sample in samples]).reshape(-1, 1)
-            max_lnpr = np.log(np.max(pr))
-            if not first_time_lnpr[i]:
-                first_time_lnpr[i] = max_lnpr
-            round_ += 1
-        best_lnpr[i] = max_lnpr
-        final_runstep[i] = round_ * nsteps
-        print('First time lnpr:', first_time_lnpr[i], '; Final lnpr:',
-              best_lnpr[i], '; Final run steps:', final_runstep[i])
-        # Saving results to popt and perr
-        sss = np.percentile(samples[:, 0], [16, 50, 84])
-        sst = np.percentile(samples[:, 1], [16, 50, 84])
+        """ Grid fitting """
+        lnprobs = -0.5 * (np.sum((sed_avg[i] - models)**2 * inv_sigma2, 
+                                 axis=2))
+        """ Show map """
+        ##plt.figure()
+        ##imshowid(np.log10(-lnprobs))
+
+        """ Randomly choosing something to plot here """
+        ##if np.random.rand() > 0.0:
+        ##    plot_single_bin(name, binNumlist[i], samples, sed_avg[i], 
+        ##                    inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
+        """ Continue saving """
+        mask = lnprobs > np.max(lnprobs) - 6
+        lnprobs_cp, logsigmas_cp, Ts_cp = \
+            lnprobs[mask], logsigmas[mask], Ts[mask]
+        pr = np.exp(lnprobs_cp)
+        #
+        ids = np.argsort(logsigmas_cp)
+        logsigmas_cp = logsigmas_cp[ids]
+        prs = pr[ids]
+        csp = np.cumsum(prs)[:-1]
+        csp = np.append(0, csp / csp[-1])
+        sss = np.interp([0.16, 0.5, 0.84], csp, 10**logsigmas_cp).tolist()
+        #
+        idT = np.argsort(Ts_cp)
+        Ts_cp = Ts_cp[idT]
+        prT = pr[idT]
+        csp = np.cumsum(prT)[:-1]
+        csp = np.append(0, csp / csp[-1])
+        sst = np.interp([0.16, 0.5, 0.84], csp, Ts_cp).tolist()
+        """ Saving to results """
         popt[bin_] = np.array([sss[1], sst[1]])
         perr[bin_] = np.array([max(sss[2]-sss[1], sss[1]-sss[0]), 
                                max(sst[2]-sst[1], sst[1]-sst[0])])
         
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
-    
-    mask = final_runstep > nsteps
-    plt.figure()
-    plt.plot(final_runstep[mask], (best_lnpr[mask] - first_time_lnpr[mask]))
-    plt.xlabel('Final runsteps')
-    plt.ylabel('Improvement in lnpr')
     # Saving to h5 file
     # Total_gas and dust in M_sun/pc**2
     # Temperature in K
@@ -315,178 +321,98 @@ def fit_dust_density(name, nwalkers=10, nsteps=500, nrounds=2,
         grp.create_dataset('Radius_map', data=radiusmap) # kpc
     print("Datasets saved.")
 
-    ## Code for plotting the results
-    """
-    testnums = np.random.randint(0,len(signal),5)
+## Code for plotting the results
 
-    for t in xrange(len(testnums)):
-        yt, xt = y[testnums[t]], x[testnums[t]]
-        r_index = np.argmax(binNumlist == binNum[testnums[t]])
-        samples = results[r_index]
-        lnpr = np.zeros([nwalkers, nsteps, 1])
-        for w in xrange(nwalkers):
-            for n in xrange(nsteps):
-                lnpr[w, n] = _lnprob(samples[w, n], wl, sed_avg[r_index], 
-                                     bkgerr)
-        pr = np.exp(lnpr)
-        samples = np.concatenate([samples, lnpr], axis = 2)
-        
-        # Plot fitting results versus step number
-        plt.figure()
-        plt.subplot(131)
-        for w in xrange(nwalkers):
-            plt.plot(samples[w,:,0], c='b')
-        plt.title('Surface density')
-        plt.subplot(132)
-        for w in xrange(nwalkers):
-            plt.plot(samples[w,:,1], c='b')
-        plt.title('Temperature')
-        plt.subplot(133)
-        for w in xrange(nwalkers):
-            plt.plot(samples[w,:,2], c='b')
-        plt.ylim(-50,np.max(samples[w,:,2]))
-        plt.title('ln(Probability)')        
-        plt.suptitle('NGC 3198 ['+str(yt)+','+str(xt)+']')
-        plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_results.png')
-
-        # Plotting data versus model
-        n = 50
-        alpha = 0.1
-        samples = samples[:,nsteps/2:,:].reshape(-1, ndim+1)
-        sexp, texp = popt[yt, xt]
-        wlexp = np.linspace(70,520)
-        nuexp = (c / wlexp / u.um).to(u.Hz)
-        modelexp = _model(wlexp, sexp, texp, nuexp)
-
-        plt.figure()
-        list_ = np.random.randint(0, len(samples), n)
-        for i in xrange(n):
-            model_i = _model(wlexp, samples[list_[i],0], samples[list_[i],1], 
-                             nuexp)
-            plt.plot(wlexp, model_i, alpha = alpha, c = 'g')
-        plt.plot(wlexp, modelexp, label='Expectation', c = 'b')
-        plt.errorbar(wl, sed_avg[r_index], yerr = bkgerr, fmt='ro', \
-                     label='Data')
-        plt.axis('tight')
-        plt.legend()
-        plt.title('NGC 3198 ['+str(yt)+','+str(xt)+']')
-        plt.xlabel(r'Wavelength ($\mu$m)')
-        plt.ylabel('SED')
-        plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_datamodel.png')
-
-        # Corner plot
-        smax = np.max(samples[:,0])
-        smin = np.min(samples[:,0])
-        tmax = np.max(samples[:,1]) + 1.
-        tmin = np.min(samples[:,1]) - 1.
-        lpmax = np.max(samples[:,2]) + 1.
-        lpmin = np.max([-50., np.min(samples[:,2])])
-        lnprexp = _lnprob((sexp, texp), wl, sed_avg[r_index], bkgerr)
-        corner.corner(samples, bins = 50, truths=[sexp, texp, lnprexp], 
-                      labels=["$\Sigma_d$", "$T$", "$\ln(Prob)$"], 
-                      range = [(smin, smax), (tmin, tmax), (lpmin, lpmax)])
-        plt.suptitle('NGC 3198 ['+str(yt)+','+str(xt)+']')
-        plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_corner.png')
-    """
-
-def fit_dust_density_grid(name):
-    """
-    Inputs:
-        name: <str>
-            Object name to be calculated.
-    Outputs (file):
-        name_popt: <numpy array>
-            Optimized parameters
-        name_perr: <numpy array>
-            Error of optimized parameters
-    """
-    # import and define
-    with File('output/dust_data.h5', 'r') as hf:
-        grp = hf[name]
-        sopt = np.array(grp.get('Dust_surface_density'))
-        serr = np.array(grp.get('Dust_surface_density_err'))
-        topt = np.array(grp.get('Dust_temperature'))
-        terr = np.array(grp.get('Dust_temperature_err'))
-        # total_gas = np.array(grp.get('Total_gas'))
-        sed = np.array(grp.get('Herschel_SED'))
-        bkgmap = np.array(grp.get('Herschel_binned_bkg'))
-        binmap = np.array(grp.get('Binmap'))
-        # radiusmap = np.array(grp.get('Radius_map')) # kpc
-    sopt2 = np.empty_like(sopt)
-    serr2 = np.empty_like(serr)
-    topt2 = np.empty_like(topt)
-    terr2 = np.empty_like(terr)
-    mask = np.full_like(sopt, True, dtype=bool)
-    off = -22.5
-
-    ## Build all models.
-    ## Maybe just save them?
-    ## log(density): -5 ~ 3, spacing 0.01
-    ## temperature: 0 ~ 50, spacing 0.1
-    print("Generating models...")
-    logsigma_step = 0.005
-    min_logsigma = -5.
-    max_logsigma = 3.
-    T_step = 0.05
-    min_T = T_step
-    max_T = 50.  
-    logsigmas = np.arange(min_logsigma, max_logsigma, logsigma_step)
-    Ts = np.arange(min_T, max_T, T_step)
-    logsigmas, Ts = np.meshgrid(logsigmas, Ts)
-    models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
-    for i in range(len(wl)):
-        models[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
-    print("Start fitting...")
-    tic = clock()
-    p = 0
-    binNumlist = np.unique(binmap)
-    for i in xrange(len(binNumlist)):
-        if (i + 1) / len(binNumlist) > p:
-            print('Step', (i + 1), '/', len(binNumlist))
-            p += 0.1
-        bin_ = (binmap == binNumlist[i])
-        bkgerr = bkgmap[bin_][0]
-        sed_avg = sed[bin_][0]
-        calerr2 = calerr_matrix2 * sed_avg**2
-        inv_sigma2 = 1 / (bkgerr**2 + calerr2)
-        """Probability function for fitting"""
-        lnprobs = -0.5 * (np.sum((sed_avg - models)**2 * inv_sigma2, axis=2))
-        am = np.argmax(lnprobs)
-        sopt2[bin_] = 10**logsigmas.flatten()[am]
-        topt2[bin_] = Ts.flatten()[am]
-        if np.max(lnprobs) > off:
-            mask[bin_] = False
-    print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt, 
+                    lnprobs, Ts, logsigmas):
+    bins = 50
+    nwalkers, nsteps, ndim = samples.shape
+    lnpr = np.zeros([nwalkers, nsteps, 1])
     
-    """
-    with File('output/dust_data.h5', 'a') as hf:
-        grp = hf[name]
-        grp.create_dataset('Dust_surface_density_grid', data=sopt2)
-        grp.create_dataset('Dust_temperature_grid', data=topt2)
-    print("Datasets saved.")
-    """
-    sopt2[mask] = np.nan
-    topt2[mask] = np.nan
+    for w in xrange(nwalkers):
+        for n in xrange(nsteps):
+            lnpr[w, n, 0] = _lnprob(samples[w, n], wl, sed_avg, inv_sigma2)
+    samples = np.concatenate([samples, lnpr], axis = 2)
+        
+    # Plot fitting results versus step number
     plt.figure()
-    plt.subplot(221)
-    imshowid(sopt2)
-    plt.title('Density')
-    plt.subplot(222)
-    imshowid(topt2)
-    plt.title('Temeprature')
-    plt.subplot(223)
-    plt.scatter(sopt, sopt2)
-    plt.xlabel('MCMC')
-    plt.ylabel('Grid')
-    plt.subplot(224)
-    plt.scatter(topt, topt2)
-    plt.xlabel('MCMC')
-    plt.ylabel('Grid')
-    plt.suptitle(name)
-    plt.savefig('output/' + name + '_grid_vs_mcmc.png')
+    plt.subplot(131)
+    for w in xrange(nwalkers):
+        plt.plot(samples[w,:,0], c='b')
+    plt.title('Surface density')
+    plt.subplot(132)
+    for w in xrange(nwalkers):
+        plt.plot(samples[w,:,1], c='b')
+    plt.title('Temperature')
+    plt.subplot(133)
+    for w in xrange(nwalkers):
+        plt.plot(samples[w,:,2], c='b')
+    plt.ylim(-50,np.max(samples[w,:,2]))
+    plt.title('ln(Probability)')        
+    plt.suptitle(name + ' bin no.' + str(binnum) + ' mcmc')
+    plt.savefig('output/' + name + 'bin_' + str(binnum) + 'mcmc.png')
+    plt.clf()
+    # MCMC Corner plot
+    samples = samples.reshape(-1, ndim + 1)
+    smax = np.max(samples[:,0])
+    smin = np.min(samples[:,0])
+    tmax = np.max(samples[:,1]) + 1.
+    tmin = np.min(samples[:,1]) - 1.
+    lpmax = np.max(samples[:,2]) + 1.
+    lpmin = np.max([-50., np.min(samples[:,2])])
+    lnpropt = _lnprob((sopt, topt), wl, sed_avg, inv_sigma2)
+    corner.corner(samples, bins = bins, truths=[sopt, topt, lnpropt], 
+                  labels=["$\Sigma_d$", "$T$", "$\ln(Prob)$"], 
+                  range = [(smin, smax), (tmin, tmax), (lpmin, lpmax)],
+                  show_titles=True)
+    plt.suptitle(name + ' bin no.' + str(binnum) + ' mcmc corner plot')
+    plt.savefig('output/' + name + 'bin_' + str(binnum) + 'mcmc_corner.png')
+    plt.clf()
+    
+    # PDF from grid-based method
+    lnprobs = lnprobs.flatten()
+    prs = np.exp(lnprobs)
+    sigmas = 10**logsigmas.flatten()
+    Ts = Ts.flatten()
+    mask = (lnprobs > np.max(lnprobs) - 6)
+    prs, sigmas, Ts, lnprobs = prs[mask], sigmas[mask], Ts[mask], lnprobs[mask]
+    samples2 = np.concatenate([sigmas.reshape(-1, 1), Ts.reshape(-1, 1), 
+                               lnprobs.reshape(-1, 1)], axis = 1)
+    corner.corner(samples2, bins = bins, truths=[sopt, topt, lnpropt], 
+                  labels=["$\Sigma_d$", "$T$", "$\ln(Prob)$"], 
+                  #range = [(smin, smax), (tmin, tmax), (lpmin, lpmax)],
+                  show_titles=True, weights=prs)
+    plt.suptitle('Grid-based PDF')
+    plt.savefig('output/' + name + 'bin_' + str(binnum) + 'grid_pdf.png')
+    plt.clf()
+    """
+    # Plotting data versus model
+    n = 50
+    alpha = 0.1
+    samples = samples[:,nsteps/2:,:].reshape(-1, ndim+1)
+    sexp, texp = popt[yt, xt]
+    wlexp = np.linspace(70,520)
+    nuexp = (c / wlexp / u.um).to(u.Hz)
+    modelexp = _model(wlexp, sexp, texp, nuexp)
 
-def read_dust_file(name='NGC_3198', bins=10, off=-22.5):
-    # name = 'NGC_3198'
+    plt.figure()
+    list_ = np.random.randint(0, len(samples), n)
+    for i in xrange(n):
+        model_i = _model(wlexp, samples[list_[i],0], samples[list_[i],1], 
+                         nuexp)
+        plt.plot(wlexp, model_i, alpha = alpha, c = 'g')
+    plt.plot(wlexp, modelexp, label='Expectation', c = 'b')
+    plt.errorbar(wl, sed_avg[r_index], yerr = bkgerr, fmt='ro', label='Data')
+    plt.axis('tight')
+    plt.legend()
+    plt.title('NGC 3198 ['+str(yt)+','+str(xt)+']')
+    plt.xlabel(r'Wavelength ($\mu$m)')
+    plt.ylabel('SED')
+    plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_datamodel.png')
+    """
+
+def read_dust_file(name='NGC3198', bins=10, off=-22.5):
+    # name = 'NGC3198'
     # bins = 10
     with File('output/dust_data.h5', 'r') as hf:
         grp = hf[name]
@@ -499,6 +425,7 @@ def read_dust_file(name='NGC_3198', bins=10, off=-22.5):
         bkgerr = np.array(grp.get('Herschel_binned_bkg'))
         binmap = np.array(grp.get('Binmap'))
         radiusmap = np.array(grp.get('Radius_map')) # kpc
+        D = float(np.array(grp['Galaxy_distance']))
         # readme = np.array(grp.get('readme'))
     
     lnprob = np.full_like(sopt, np.nan)
@@ -512,10 +439,6 @@ def read_dust_file(name='NGC_3198', bins=10, off=-22.5):
         if lnprob[mask][0] < off:
             sopt[mask], topt[mask], serr[mask], terr[mask], lnprob[mask] = \
                 np.nan, np.nan, np.nan, np.nan, np.nan
-        
-    plt.figure()
-    imshowid(lnprob)
-    plt.title('lnprob')
     
     dgr = sopt / total_gas
     
@@ -532,34 +455,38 @@ def read_dust_file(name='NGC_3198', bins=10, off=-22.5):
     plt.subplot(224)
     imshowid(terr)
     plt.title('Temperature uncertainty')
-    plt.suptitle(name)
     plt.savefig('output/' + name + '_fitting_results.png')
-   
-    plt.figure()
-    plt.subplot(121)
-    plt.hist(np.log10(sopt[sopt>0]), bins = bins, weights=total_gas[sopt>0])
-    plt.title('Weighted surface density (log scale)')
-    plt.subplot(122)
-    plt.hist(topt[topt>0], bins = bins, weights=total_gas[topt>0])
-    plt.title('Weighted temperature')
-    plt.suptitle(name)
-    plt.savefig('output/' + name + '_weighted_hist.png')
+    plt.clf()
 
-    plt.figure()
-    plt.subplot(131)
+    plt.subplot(221)
     imshowid(np.log10(total_gas))
     plt.title('Total gas (log)')
-    plt.subplot(132)
+    plt.subplot(222)
     imshowid(np.log10(dgr))
-    plt.title('DGR')
-    plt.subplot(133)
-    plt.hist(np.log10(dgr[dgr>0]), bins = bins)
-    plt.title('DGR')
-    plt.suptitle(name + ' dust to gas ratio (log scale)')
-    plt.savefig('output/' + name + '_fitting_DGR.png')
+    plt.title('DGR (log)')
+    plt.subplot(223)
+    imshowid(sopt)
+    plt.title('Surface density')
+    plt.subplot(224)
+    imshowid(topt)
+    plt.title('Temperature')
+    plt.savefig('output/' + name + '_fitting_results2.png')
+    plt.clf()
+   
+    plt.subplot(311)
+    plt.hist(np.log10(sopt[sopt>0]), bins = bins, weights=total_gas[sopt>0])
+    plt.title('Gas weighted surface density (log)')
+    plt.subplot(312)
+    plt.hist(topt[topt>0], bins = bins, weights=total_gas[topt>0])
+    plt.title('Gas weighted temperature')
+    plt.suptitle(name)
+    plt.subplot(313)
+    plt.hist(np.log10(dgr[dgr>0]), bins = bins, weights=total_gas[dgr>0])
+    plt.title('Gas weighted DGR (log)')
+    plt.savefig('output/' + name + '_weighted_hist.png')
+    plt.clf()
 
-    plt.figure()
-    plt.subplot(121)
+    plt.subplot(121)    
     plt.scatter(total_gas.flatten(), sopt.flatten())
     plt.xlabel(r'Total gas surface mass density ($M_\odot/pc^2$)')
     plt.ylabel(r'Dust surface mass density ($M_\odot/pc^2$)')
@@ -570,6 +497,27 @@ def read_dust_file(name='NGC_3198', bins=10, off=-22.5):
     plt.ylabel(r'Dust surface mass density ($M_\odot/pc^2$)')
     plt.title('Log scale')
     plt.suptitle('Total gas vs. dust')
+    plt.savefig('output/' + name + '_gas_vs_dust.png')
+    plt.clf()
+
+    ## D in Mpc. Need r25 in kpc
+    r25 = gal_data([name]).field('R25_DEG')[0]
+    r25 *= (np.pi / 180.) * (D * 1E3)
+    binlist = np.unique(binmap)
+    r_reduced = np.array([radiusmap[binmap==temp][0] for temp in binlist])
+    dgr_reduced = np.array([dgr[binmap==temp][0] for temp in binlist])
+    plt.subplot(121)    
+    """ DGR profile """
+    plt.scatter(r_reduced, dgr_reduced)
+    plt.xlabel(r'Radius ($kpc$)')
+    plt.ylabel(r'Dust-to-Gas-Ratio')
+    plt.subplot(122)
+    plt.scatter(r_reduced / r25, dgr_reduced)
+    plt.xlabel(r'Radius ($R_{25}$)')
+    plt.ylabel(r'Dust-to-Gas-Ratio')
+    plt.suptitle('DGR profile')
+    plt.savefig('output/' + name + '_dgr_profile.png')
+    plt.clf()
 
 """
 def reject_outliers(data, sig=2.):
