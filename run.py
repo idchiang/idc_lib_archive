@@ -19,11 +19,8 @@ Corner:
     1. Cite the JOSS paper
        http://dx.doi.org/10.21105/joss.00024
 """
-import matplotlib
-matplotlib.use('Agg')
-from astro_idchiang import Surveys, read_dust_file
+from astro_idchiang import Surveys, read_dust_file, read_change_XCO, read_gases_dust
 from astro_idchiang import fit_dust_density as fdd
-from astro_idchiang import imshowid
 problem = ['NGC6946']
                
 all_objects = ['IC2574', 'NGC0628', 'NGC0925', 'NGC2841', 'NGC2976', 'NGC3077', 
@@ -44,8 +41,29 @@ def generator():
     cmaps.matching_PSF_2step(all_objects, MP2, 'Gauss_25', 'SPIRE_500')
     cmaps.WCS_congrid(all_objects, fine_surveys, 'SPIRE_500')
     cmaps.save_data(all_objects)
-    
+        
 def fitting(nwalkers=20, nsteps=150):
     for object_ in all_objects:
         fdd(object_, nwalkers=10, nsteps=500)
         read_dust_file(object_, bins=10, off=-22.5)
+        
+def generator_change_XCO(objects=['NGC3198'], XCO_multiplier=0.5):
+    surveys = ['THINGS', 'SPIRE_500', 'HERACLES']
+    cmaps = Surveys(objects, surveys, XCO_multiplier)
+    cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
+    cmaps.matching_PSF_2step(objects, MP2, 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(objects, MP2, 'SPIRE_500')
+    cmaps.save_new_XCO(objects)
+
+def generator_gases(objects=['NGC3198']):
+    surveys = ['THINGS', 'SPIRE_500', 'HERACLES']
+    cmaps = Surveys(objects, surveys)
+    cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
+    cmaps.matching_PSF_2step(objects, MP2, 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(objects, MP2, 'SPIRE_500')
+    cmaps.save_gases(objects)
+    
+def misc(objects = all_objects):
+    for sample in objects:
+        read_gases_dust(sample)
+    pass
