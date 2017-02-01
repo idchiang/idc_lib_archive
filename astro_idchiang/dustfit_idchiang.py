@@ -1,8 +1,6 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 range = xrange
-import matplotlib
-matplotlib.use('Agg')
 from time import clock
 # import emcee
 from h5py import File
@@ -66,7 +64,7 @@ def _lnlike(theta, x, y, inv_sigma2):
 def _lnprior(theta):
     """Probability function for fitting"""
     sigma, T = theta
-    if np.log10(sigma) < 3 and 0 < T < 200:
+    if np.log10(sigma) < 3 and 0 < T < 50:
         return 0
     return -np.inf
         
@@ -127,7 +125,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     x_d, y_d = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
     x_d, y_d = x_d[diskmask], y_d[diskmask]
     # Dividing into layers
-    judgement = np.min(np.abs(np.sum(signal_d)) / np.sqrt(len(signal_d)))
+    judgement = np.abs(np.sum(signal_d)) / np.sqrt(len(signal_d))
     if judgement < targetSN:
         print(name, 'is having just too low overall SNR. Will not fit')
         # Save something just to avoid reading error
@@ -163,6 +161,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         masks.append((dp_radius >= i * fwhm_radius) * 
                      (dp_radius < (i + 1) * fwhm_radius))
     masks.append(dp_radius >= (nlayers - 1) * fwhm_radius)
+    masks = [masks[i][diskmask] for i in range(nlayers)]
     ##### test image: original layers #####
     """    
     image_test1 = np.full_like(dp_radius, np.nan)
@@ -172,8 +171,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     #######################################
     
     for i in range(nlayers - 1, -1, -1):
-        judgement = np.min(np.abs(np.sum(sed[masks[i]], axis=0)) / 
-                           np.sqrt(np.sum(masks[i])) / bkgerr)
+        judgement = np.abs(np.sum(signal_d[masks[i]])) / np.sqrt(len(masks[i]))
         if judgement < targetSN:
             if i > 0:
                 masks[i - 1] += masks[i]
@@ -202,7 +200,6 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     plt.title('SNR combined cuts')
     """
     #######################################
-    masks = [masks[i][diskmask] for i in range(nlayers)]
     """ Modify radial bins here """
     max_binNum = 0
     binNum = np.full_like(signal_d, np.nan)
@@ -281,7 +278,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         prs = pr[ids]
         csp = np.cumsum(prs)[:-1]
         csp = np.append(0, csp / csp[-1])
-        sss = np.interp([0.16, 0.5, 0.84], csp, 10**logsigmas_cp).tolist()
+        sss = np.interp([0.16, 0.5, 0.84], csp, logsigmas_cp).tolist()
         #
         idT = np.argsort(Ts_cp)
         Ts_cp = Ts_cp[idT]
@@ -309,8 +306,10 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp.create_dataset('Total_gas', data=total_gas)
         grp.create_dataset('Herschel_SED', data=sed)
         grp.create_dataset('Herschel_binned_bkg', data=bkgmap)
-        grp.create_dataset('Dust_surface_density', data=popt[:, :, 0])
-        grp.create_dataset('Dust_surface_density_err', data=perr[:, :, 0])
+        grp.create_dataset('Dust_surface_density_log', data=popt[:, :, 0])
+        # sopt in log scale (search sss)
+        grp.create_dataset('Dust_surface_density_err_dex', data=perr[:, :, 0])
+        # serr in dex
         grp.create_dataset('Dust_temperature', data=popt[:, :, 1])
         grp.create_dataset('Dust_temperature_err', data=perr[:, :, 1])
         grp.create_dataset('Binmap', data=binmap)
@@ -410,13 +409,13 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_datamodel.png')
     """
 
-def read_dust_file(name='NGC3198', bins=10, off=-22.5):
+def read_dust_file(name='NGC3198', bins=30, off=-22.5):
     # name = 'NGC3198'
     # bins = 10
     with File('output/dust_data.h5', 'r') as hf:
         grp = hf[name]
-        sopt = np.array(grp.get('Dust_surface_density'))
-        serr = np.array(grp.get('Dust_surface_density_err'))
+        logs_d = np.array(grp.get('Dust_surface_density_log')) # in log
+        serr = np.array(grp.get('Dust_surface_density_err_dex')) # in dex
         topt = np.array(grp.get('Dust_temperature'))
         terr = np.array(grp.get('Dust_temperature_err'))
         total_gas = np.array(grp.get('Total_gas'))
@@ -426,117 +425,127 @@ def read_dust_file(name='NGC3198', bins=10, off=-22.5):
         radiusmap = np.array(grp.get('Radius_map')) # kpc
         D = float(np.array(grp['Galaxy_distance']))
         # readme = np.array(grp.get('readme'))
-    
-    lnprob = np.full_like(sopt, np.nan)
-    binlist = np.unique(binmap[~np.isnan(binmap)])
+
+    with File('output/RGD_data.h5', 'r') as hf:
+        grp = hf[name]
+        things = np.array(grp['THINGS'])
+        heracles = np.array(grp['HERACLES'])
+        diskmask = np.array(grp['Diskmask'])
+
+    lnprob = np.full_like(logs_d, np.nan)
+    binlist = np.unique(binmap[diskmask])
     for bin_ in binlist:
         mask = binmap == bin_
         calerr2 = calerr_matrix2 * sed[mask][0]**2
         inv_sigma2 = 1 / (bkgerr[mask][0]**2 + calerr2)
-        lnprob[mask] = _lnprob([sopt[mask][0], topt[mask][0]], wl, 
+        lnprob[mask] = _lnprob([10**logs_d[mask][0], topt[mask][0]], wl, 
                                sed[mask][0], inv_sigma2)
-        if lnprob[mask][0] < off:
-            sopt[mask], topt[mask], serr[mask], terr[mask], lnprob[mask] = \
+        if lnprob[mask][0] < off or serr[mask][0] > 1.:
+            logs_d[mask], topt[mask], serr[mask], terr[mask], lnprob[mask] = \
                 np.nan, np.nan, np.nan, np.nan, np.nan
+            total_gas[mask], things[mask], heracles[mask] = \
+                np.nan, np.nan, np.nan
+
+    logs_gas = np.log10(total_gas)
+    # logs_HI = np.log10(things)
+    logs_H2 = np.log10(heracles)
+    logdgr = logs_d - logs_gas
     
-    dgr = sopt / total_gas
+    # D in Mpc. Need r25 in kpc
+    R25 = gal_data([name]).field('R25_DEG')[0]
+    R25 *= (np.pi / 180.) * (D * 1E3)
 
     # Fitting results
     fig, ax = plt.subplots(2, 2, figsize=(15,12))
     cax = np.empty_like(ax)
-    ax[0, 0].set_title('Surface density', size=30)
-    ax[0, 1].set_title('Surface density uncertainty', size=30)
-    ax[1, 0].set_title('Temperature', size=30)
-    ax[1, 1].set_title('Temperature uncertainty', size=30)
-    cax[0, 0] = ax[0, 0].imshow(sopt, origin='lower')
+    fig.suptitle(name, size=28, y=0.995)
+    ax[0, 0].set_title(r'$\Sigma_d$ $(\log_{10}(M_\odot pc^{-2}))$', size=30)
+    cax[0, 0] = ax[0, 0].imshow(logs_d, origin='lower')
+    ax[0, 1].set_title(r'$\Sigma_d$ error (dex)', size=30)
     cax[0, 1] = ax[0, 1].imshow(serr, origin='lower')
+    ax[1, 0].set_title(r'$T_d$ ($K$)', size=30)
     cax[1, 0] = ax[1, 0].imshow(topt, origin='lower')
+    ax[1, 1].set_title(r'$T_d$ error ($K$)', size=30)
     cax[1, 1] = ax[1, 1].imshow(terr, origin='lower')
     for i in range(2):
         for j in range(2):
             fig.colorbar(cax[i, j], ax=ax[i, j])
     fig.tight_layout()
     fig.subplots_adjust(wspace=0.1, hspace=0.25)
-    fig.savefig('output/' + name + '_fitting_results.png')
+    fig.savefig('output/' + name + '_Sd_Td.png')
     fig.clf()
     
     # Total gas & DGR
-    fig, ax = plt.subplots(2, 2, figsize=(15,12))
-    # fig.set_size_inches(15, 12)
+    fig, ax = plt.subplots(2, 3, figsize=(20,12))
     cax = np.empty_like(ax)
-    ax[0, 0].set_title('Total gas (log)', size=30)
-    ax[0, 1].set_title('DGR (log)', size=30)
-    ax[1, 0].set_title('Surface density', size=30)
-    ax[1, 1].set_title('Temperature', size=30)
-    cax[0, 0] = ax[0, 0].imshow(np.log10(total_gas), origin='lower')
-    cax[0, 1] = ax[0, 1].imshow(np.log10(dgr), origin='lower')
-    cax[1, 0] = ax[1, 0].imshow(sopt, origin='lower')
-    cax[1, 1] = ax[1, 1].imshow(topt, origin='lower')
+    fig.suptitle(name, size=28, y=0.995)
+    cax[0, 0] = ax[0, 0].imshow(logdgr, origin='lower')
+    ax[0, 0].set_title('DGR (log)', size=20)
+    cax[0, 1] = ax[0, 1].imshow(logs_gas, origin='lower')
+    ax[0, 1].set_title(r'$\Sigma_{gas}$ $(\log_{10}(M_\odot pc^{-2}))$', size=20)
+    cax[0, 2] = ax[0, 2].imshow(logs_H2, origin='lower')
+    ax[0, 2].set_title(r'HERACLES (log, not binned)', size=20)
+    cax[1, 0] = ax[1, 0].imshow(logs_d, origin='lower')
+    ax[1, 0].set_title(r'$\Sigma_{d}$ $(\log_{10}(M_\odot pc^{-2}))$', size=20)
+    cax[1, 1] = ax[1, 1].imshow(serr, origin='lower')
+    ax[1, 1].set_title(r'$\Sigma_d$ error (dex)', size=20)
+    cax[1, 2] = ax[1, 2].imshow(-lnprob, origin='lower')
+    ax[1, 2].set_title(r'$\chi^2$', size=20)
     for i in range(2):
-        for j in range(2):
+        for j in range(3):
             fig.colorbar(cax[i, j], ax=ax[i, j])
     fig.tight_layout()
-    fig.subplots_adjust(wspace=0.1, hspace=0.25)
-    fig.savefig('output/' + name + '_fitting_results2.png')
+    fig.subplots_adjust(wspace=0.25)
+    fig.savefig('output/' + name + '_DGR_Sd_GAS.png')
     fig.clf()
     
-    # Weighted histogram
-    fig, ax = plt.subplots(1, 3, figsize=(13,7))
-    # fig.set_size_inches(15, 12)
-    ax[0].set_title('Gas weighted surface density', size=18, y=1.04)
-    ax[1].set_title('Gas weighted temperature', size=18, y=1.04)
-    ax[2].set_title('Gas weighted DGR', size=18, y=1.04)
-    ax[0].hist(np.log10(sopt[sopt>0]), bins = bins, weights=total_gas[sopt>0])
-    ax[1].hist(topt[topt>0], bins = bins, weights=total_gas[topt>0])
-    ax[2].hist(np.log10(dgr[dgr>0]), bins = bins, weights=total_gas[dgr>0])
-    ax[0].set_xlabel(r'Surface density ($\ln(M_\odot/pc^2)$)', size=14)
-    ax[1].set_xlabel('Temperature (K)', size=14)
-    ax[2].set_xlabel('DGR (log scale)', size=14)
-    fig.tight_layout()
-    fig.subplots_adjust(wspace=0.25)
-    fig.savefig('output/' + name + '_weighted_hist.png')
-    fig.clf()
-    
-    # Gas versus dust
-    fig, ax = plt.subplots(1, 2, figsize=(12,7))
-    # fig.set_size_inches(15, 12)
-    ax[0].set_title('Linear scale', size=20)
-    ax[1].set_title('Log scale', size=20)
-    fig.suptitle('Total gas vs. dust', size=28, y=1.001)
-    ax[0].scatter(total_gas.flatten(), sopt.flatten())
-    ax[1].scatter(np.log10(total_gas.flatten()), np.log10(sopt.flatten()))
-    ax[0].set_xlabel(r'Total gas surface mass density ($M_\odot/pc^2$)', size=16)
-    ax[0].set_ylabel(r'Dust surface mass density ($M_\odot/pc^2$)', size=16)
-    ax[1].set_xlabel(r'Total gas surface mass density ($M_\odot/pc^2$)', size=16)
-    ax[1].set_ylabel(r'Dust surface mass density ($M_\odot/pc^2$)', size=16)
-    # fig.tight_layout()
-    fig.subplots_adjust(wspace=0.25)
-    fig.savefig('output/' + name + '_gas_vs_dust.png')
-    fig.clf()
-
-    # D in Mpc. Need r25 in kpc
-    r25 = gal_data([name]).field('R25_DEG')[0]
-    r25 *= (np.pi / 180.) * (D * 1E3)
-    binlist = np.unique(binmap)
-    r_reduced = np.array([radiusmap[binmap==temp][0] for temp in binlist])
-    dgr_reduced = np.array([dgr[binmap==temp][0] for temp in binlist])
+    r_r25 = np.array([radiusmap[binmap==temp][0] for temp in binlist]) / R25
+    r_logdgr = np.array([logdgr[binmap==temp][0] for temp in binlist])
+    r_logsg = np.array([logs_gas[binmap==temp][0] for temp in binlist])
+    r_area = np.array([np.sum(binmap==temp) for temp in binlist])
+    r_gmass = r_area * 10**r_logsg
+    mask = ~np.isnan(r_r25 + r_logsg + r_area)
+    r_r25, r_logdgr, r_logsg, r_area, r_gmass = \
+        r_r25[mask], r_logdgr[mask], r_logsg[mask], r_area[mask], r_gmass[mask]
     # DGR profile
-    fig, ax = plt.subplots(1, 2, figsize=(12,7))
+    fig, ax = plt.subplots(1, 3, figsize=(21,7))
+    cax = np.empty_like(ax)
     # fig.set_size_inches(15, 12)
-    fig.suptitle('DGR profile', size=28)
-    ax[0].scatter(r_reduced, dgr_reduced)
-    ax[1].scatter(r_reduced / r25, dgr_reduced)
-    ax[0].set_xlabel(r'Radius ($kpc$)', size=16)
-    ax[0].set_ylabel(r'Dust-to-Gas-Ratio', size=16)
-    ax[1].set_xlabel(r'Radius ($R_{25}$)', size=16)
-    ax[1].set_ylabel(r'Dust-to-Gas-Ratio', size=16)
-    # fig.tight_layout()
-    fig.subplots_adjust(wspace=0.25)
-    fig.savefig('output/' + name + '_dgr_profile.png')
-    fig.clf()
+    fig.suptitle(name + ' DGR profile', size=28, y=0.995)
+    ax[0].scatter(r_r25, r_logdgr)
+    ax[0].set_xlabel(r'Radius ($R_{25}$)', size=16)
+    ax[0].set_ylabel(r'DGR (log)', size=16)
+    ax[0].set_title('No weights', size=20)
     
+    caxt = ax[1].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmass, cmin=1)
+    cmax = np.nanmean(caxt[0]) + 3 * np.nanstd(caxt[0])
+    cax[1] = ax[1].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmass, cmin=1, 
+             cmax = cmax)
+    ax[1].set_xlabel(r'Radius ($R_{25}$)', size=16)
+    ax[1].set_ylabel(r'DGR (log)', size=16)
+    ax[1].set_title('Gas mass weighted', size=20)
+    fig.colorbar(cax[1][3], ax=ax[1])
+
+    caxt = ax[2].hist2d(r_r25, r_logdgr, bins=bins, weights=r_area, cmin=1)
+    cmax = np.nanmean(caxt[0]) + 3 * np.nanstd(caxt[0])
+    cax[2] = ax[2].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmass, cmin=1, 
+             cmax = cmax)
+    ax[2].set_xlabel(r'Radius ($R_{25}$)', size=16)
+    ax[2].set_ylabel(r'DGR (log)', size=16)
+    ax[2].set_title('Area weighted', size=20)
+    fig.colorbar(cax[2][3], ax=ax[2])
+    
+    fig.subplots_adjust(wspace=0.25)
+    for i in range(3):
+        ax[i].set_xlim([0., np.max(r_r25)+0.1])
+        ax[i].set_ylim([np.min(r_logdgr)-0.1, np.max(r_logdgr)+0.1])
+    fig.savefig('output/' + name + '_DGR_hist2d.png')
+    fig.clf()
     plt.close("all")
 
+def read_dust_test(name='NGC3198', bins=20, cmaxm = 3000, cmaxa = 2000, off=-22.5):
+    pass
+    
 """
 def reject_outliers(data, sig=2.):
     data = data[~np.isnan(data)]
@@ -560,118 +569,3 @@ def reject_outliers(data, sig=2.):
     err2 = np.std(data_temp)
     print err1, err2
 """
-
-def read_change_XCO(name='NGC3198', XCO1=0.5, XCO2=2.0):
-    # name = 'NGC3198'
-    # bins = 10
-    with File('output/dust_data.h5', 'r') as hf:
-        grp = hf[name]
-        sopt = np.array(grp.get('Dust_surface_density'))
-        # serr = np.array(grp.get('Dust_surface_density_err'))
-        total_gas = np.array(grp.get('Total_gas'))
-        binmap = np.array(grp.get('Binmap'))
-        radiusmap = np.array(grp.get('Radius_map')) # kpc
-        D = float(np.array(grp['Galaxy_distance']))
-        # readme = np.array(grp.get('readme'))
-
-    with File('output/RGD_data.h5', 'r') as hf:
-        grp = hf[name]
-        total_gas1 = np.array(grp['Total_gas_XCOM=' + str(round(XCO1, 2))])
-        total_gas2 = np.array(grp['Total_gas_XCOM=' + str(round(XCO2, 2))])
-        # THINGS_Limit = np.array(grp['THINGS_LIMIT'])
-
-    binlist = np.unique(binmap[~np.isnan(binmap)])
-    for bin_ in binlist:
-          mask = binmap == bin_
-          total_gas1[mask] = np.nanmean(total_gas1[mask])
-          total_gas2[mask] = np.nanmean(total_gas2[mask])
-          
-    dgr = sopt / total_gas
-    dgr1 = sopt / total_gas1
-    dgr2 = sopt / total_gas2
-    
-    # D in Mpc. Need r25 in kpc
-    r25 = gal_data([name]).field('R25_DEG')[0]
-    r25 *= (np.pi / 180.) * (D * 1E3)
-    r_reduced = np.array([radiusmap[binmap==temp][0] for temp in binlist])
-    dgr_reduced = np.array([dgr[binmap==temp][0] for temp in binlist])
-    dgr1_reduced = np.array([dgr1[binmap==temp][0] for temp in binlist])
-    dgr2_reduced = np.array([dgr2[binmap==temp][0] for temp in binlist])
-    # DGR profile
-    fig, ax = plt.subplots(1, 2, figsize=(12,7))
-    # fig.set_size_inches(15, 12)
-    ax[0].scatter(r_reduced, dgr_reduced, c='b', label='XCO=2E20')
-    ax[0].scatter(r_reduced, dgr1_reduced, c='r', label='XCO=1E20')
-    ax[0].scatter(r_reduced, dgr2_reduced, c='g', label='XCO=4E20')
-    ax[1].scatter(r_reduced / r25, dgr_reduced, c='b', label='XCO=2E20')
-    ax[1].scatter(r_reduced / r25, dgr1_reduced, c='r', label='XCO=1E20')
-    ax[1].scatter(r_reduced / r25, dgr2_reduced, c='g', label='XCO=4E20')
-    ax[0].set_xlabel(r'Radius ($kpc$)', size=16)
-    ax[0].set_ylabel(r'Dust-to-Gas-Ratio', size=16)
-    ax[1].set_xlabel(r'Radius ($R_{25}$)', size=16)
-    ax[1].set_ylabel(r'Dust-to-Gas-Ratio', size=16)
-    ax[0].legend()
-    ax[1].legend()
-    # fig.tight_layout()
-    fig.subplots_adjust(wspace=0.25)
-    fig.savefig('output/' + name + '_dgr_changing_XCO.png')
-    fig.clf()
-    
-    plt.close("all")
-    
-def read_gases_dust(name='NGC3198'):
-    with File('output/dust_data.h5', 'r') as hf:
-        grp = hf[name]
-        sopt = np.array(grp.get('Dust_surface_density'))
-        # serr = np.array(grp.get('Dust_surface_density_err'))
-        total_gas = np.array(grp.get('Total_gas'))
-        binmap = np.array(grp.get('Binmap'))
-        radiusmap = np.array(grp.get('Radius_map')) # kpc
-        D = float(np.array(grp['Galaxy_distance']))
-        # readme = np.array(grp.get('readme'))
-
-    with File('output/RGD_data.h5', 'r') as hf:
-        grp = hf[name]
-        things = np.array(grp['THINGS'])
-        heracles = np.array(grp['HERACLES'])
-        # THINGS_Limit = np.array(grp['THINGS_LIMIT'])
-
-    binlist = np.unique(binmap[~np.isnan(binmap)])
-    for bin_ in binlist:
-          mask = binmap == bin_
-          things[mask] = np.nanmean(things[mask])
-          heracles[mask] = np.nanmean(heracles[mask])
-          
-    dgr = sopt / total_gas
-    
-    # D in Mpc. Need r25 in kpc
-    r_red = np.array([radiusmap[binmap==temp][0] for temp in binlist])
-    dgr_red = np.array([dgr[binmap==temp][0] for temp in binlist])
-    things_red = np.array([things[binmap==temp][0] for temp in binlist])
-    heracles_red = np.array([heracles[binmap==temp][0] for temp in binlist])
-    sopt_red = np.array([sopt[binmap==temp][0] for temp in binlist])
-    mask = np.argsort(r_red)
-    r_red = r_red[mask]
-    dgr_red = dgr_red[mask]
-    things_red = things_red[mask]
-    heracles_red = heracles_red[mask]
-    sopt_red = sopt_red[mask]
-    mg = np.max([np.nanmax(things_red), np.nanmax(heracles_red)])
-    # DGR profile
-    fig, ax = plt.subplots(2, 1, figsize=(12,12))
-    # fig.set_size_inches(15, 12)
-    ax[0].scatter(r_red, dgr_red, s=15)
-    ax[1].scatter(r_red, sopt_red / np.nanmax(sopt_red), c='b', label='Dust', s=15)
-    ax[1].scatter(r_red, things_red / mg, c='r', label='HI', s=15)
-    ax[1].scatter(r_red, heracles_red / mg, c='y', label='H2', s=15)
-    ax[0].set_xlabel(r'Radius ($kpc$)', size=16)
-    ax[0].set_ylabel(r'Dust-to-Gas-Ratio', size=16)
-    ax[1].set_xlabel(r'Radius ($kpc$)', size=16)
-    ax[1].set_ylabel(r'Max-normalized surface density', size=16)
-    ax[1].legend()
-    # fig.tight_layout()
-    fig.suptitle(name, size=24)
-    fig.savefig('output/' + name + '_all_gases_and_dusts.png')
-    fig.clf()
-    
-    plt.close("all")

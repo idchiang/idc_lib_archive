@@ -1,8 +1,6 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 range = xrange
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 

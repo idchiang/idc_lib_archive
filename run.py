@@ -19,13 +19,12 @@ Corner:
     1. Cite the JOSS paper
        http://dx.doi.org/10.21105/joss.00024
 """
-from astro_idchiang import Surveys, read_dust_file, read_change_XCO, read_gases_dust
+from astro_idchiang import Surveys, read_dust_file
 from astro_idchiang import fit_dust_density as fdd
-problem = ['NGC6946']
                
 all_objects = ['IC2574', 'NGC0628', 'NGC0925', 'NGC2841', 'NGC2976', 'NGC3077', 
                'NGC3184', 'NGC3198', 'NGC3351', 'NGC3521', 'NGC3627', 
-               'NGC4736', 'NGC5055', 'NGC5457', 'NGC7331']
+               'NGC4736', 'NGC5055', 'NGC5457', 'NGC6946', 'NGC7331']
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250', 
                'PACS_160', 'PACS_100', 'HERACLES']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
@@ -34,36 +33,21 @@ MP1 = ['SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 
                 'PACS_100', 'HERACLES']
 
-def generator():
-    cmaps = Surveys(all_objects, all_surveys)
+def generator(samples = all_objects):
+    cmaps = Surveys(samples, all_surveys)
     cmaps.add_kernel(all_kernels, 'SPIRE_500')
-    cmaps.matching_PSF_1step(all_objects, MP1, 'SPIRE_500')
-    cmaps.matching_PSF_2step(all_objects, MP2, 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(all_objects, fine_surveys, 'SPIRE_500')
-    cmaps.save_data(all_objects)
-        
-def fitting(nwalkers=20, nsteps=150):
-    for object_ in all_objects:
-        fdd(object_, nwalkers=10, nsteps=500)
-        read_dust_file(object_, bins=10, off=-22.5)
-        
-def generator_change_XCO(objects=['NGC3198'], XCO_multiplier=0.5):
-    surveys = ['THINGS', 'SPIRE_500', 'HERACLES']
-    cmaps = Surveys(objects, surveys, XCO_multiplier)
-    cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
-    cmaps.matching_PSF_2step(objects, MP2, 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(objects, MP2, 'SPIRE_500')
-    cmaps.save_new_XCO(objects)
+    cmaps.matching_PSF_1step(samples, MP1, 'SPIRE_500')
+    cmaps.matching_PSF_2step(samples, MP2, 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
+    cmaps.save_data(samples)
 
-def generator_gases(objects=['NGC3198']):
-    surveys = ['THINGS', 'SPIRE_500', 'HERACLES']
-    cmaps = Surveys(objects, surveys)
-    cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
-    cmaps.matching_PSF_2step(objects, MP2, 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(objects, MP2, 'SPIRE_500')
-    cmaps.save_gases(objects)
-    
-def misc(objects = all_objects):
-    for sample in objects:
-        read_gases_dust(sample)
-    pass
+def fitting(samples=all_objects, nwalkers=10, nsteps=500, bins=30, off=-22.5):
+    samples = [samples] if type(samples) == str else samples
+    for sample in samples:
+        fdd(sample, nwalkers=nwalkers, nsteps=nsteps)
+        read_dust_file(sample, bins=bins, off=off)
+
+def misc(samples=['NGC3198'], nwalkers=10, nsteps=500, bins=30, off=-22.5):
+    samples = [samples] if type(samples) == str else samples
+    for sample in samples:
+        read_dust_file(sample, bins=bins, off=off)

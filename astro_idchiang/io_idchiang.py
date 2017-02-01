@@ -3,8 +3,6 @@ from __future__ import absolute_import, division, print_function, \
 range = xrange
 import os
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
@@ -17,6 +15,7 @@ from .plot_idchiang import imshowid
 from . import regrid_idchiang as ric
 
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
+H2HaHe = 1.36
 
 """
 HOI UGC05139
@@ -44,7 +43,7 @@ def read_h5(filename):
 
 class Surveys(object):
     """ Storaging maps, properties, kernels. """
-    def __init__(self, names, surveys, XCO_multiplier=1.0, auto_import=True):
+    def __init__(self, names, surveys, auto_import=True):
         """
         Inputs:
             names: <list of str | str>
@@ -61,15 +60,14 @@ class Surveys(object):
         DATA_PATH = os.path.join(this_dir, "data_table/galaxy_data.csv")
         self.galaxy_data = pd.read_csv(DATA_PATH)
         self.galaxy_data.index = self.galaxy_data.OBJECT.values
-        self.XCO_multiplier = XCO_multiplier
         
         if auto_import:
             print("Importing", len(names) * len(surveys), "fits files...")        
             tic = clock()
-            self.add_galaxies(names, surveys, XCO_multiplier)
+            self.add_galaxies(names, surveys)
             print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
                 
-    def add_galaxies(self, names, surveys, XCO_multiplier=1.0, filenames=None):
+    def add_galaxies(self, names, surveys, filenames=None):
         """   
         Inputs:
             names: <list of str | str>
@@ -87,8 +85,7 @@ class Surveys(object):
                    "Input lengths are not equal!!"
             for i in range(len(filenames)):
                 print("Warning: BMAJ, BMIN, BPA not supported now!!")
-                self.add_galaxy(names[i], surveys[i], XCO_multiplier, 
-                                filenames[i])
+                self.add_galaxy(names[i], surveys[i], filenames[i])
         else:
             for survey in surveys:
                 if survey == 'THINGS':
@@ -104,9 +101,9 @@ class Surveys(object):
                     self.galaxy_data['BMIN'] = [1.0] * len(self.galaxy_data)            
                     self.galaxy_data['BPA'] = [0.0] * len(self.galaxy_data)     
                 for name in names:
-                    self.add_galaxy(name, survey, XCO_multiplier)
+                    self.add_galaxy(name, survey)
 		
-    def add_galaxy(self, name, survey, XCO_multiplier=1.0, filename=None):
+    def add_galaxy(self, name, survey, filename=None):
         """   
         Inputs:
             name: <str>
@@ -206,9 +203,8 @@ class Surveys(object):
                 # HERACLES: Raw data in K*km/s. Change to
                 # column density 1/cm^2
                 # This is a calculated parameter by fitting HI to H2 mass
-                R21 = 0.8
-                XCO = 2.0E20 * XCO_multiplier
-                data *= XCO * (R21 / 0.8)
+                R21 = 0.7
+                data *= R21 * s['ACO']
             else:
                 if survey in ['PACS_160', 'PACS_100']:
                     data = data[0]
@@ -273,6 +269,7 @@ class Surveys(object):
         FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, 
                 'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, 
                 'HERACLES': 13}
+        # Note: pixel scale of SPIRE 500 ~ 14.00
         if not FWHM1s:
             for name1 in name1s:
                 FWHM1s.append(FWHM[name1])
@@ -458,7 +455,7 @@ class Surveys(object):
             heracles = heracles[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             # To avoid np.nan in H2 + signal in HI
             heracles[np.isnan(heracles)] = 0 
-            total_gas = col2sur * (2 * heracles + things)
+            total_gas = col2sur * H2HaHe * things + heracles
             sed = sed[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
             diskmask = diskmask[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             dp_radius = dp_radius[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
@@ -490,6 +487,7 @@ class Surveys(object):
                                    data=self.df.loc[(name, 'SPIRE_500')].PS)
                 grp.create_dataset('THINGS_LIMIT', data=THINGS_Limit)
                 grp.create_dataset('DP_RADIUS', data=dp_radius) # kpc
+            """
             plt.figure()
             plt.subplot(2, 4, 1)
             imshowid(np.log10(total_gas))
@@ -505,44 +503,5 @@ class Surveys(object):
             plt.savefig('output/RGD_data/' + name + '.png')
             plt.clf()
             plt.close()
-        print('All data saved.')
-        
-    def save_new_XCO(self, names):    
-        """
-        Inputs:
-            names: <list of str | str>
-                Object names to be saved.
-        """
-        names = [names] if type(names) == str else names
-        for name in names:
-            print('Saving', name, 'data...')
-            things = self.df.loc[(name, 'THINGS')].RGD_MAP
-            heracles = self.df.loc[(name, 'HERACLES')].RGD_MAP
-            # Cutting off the nan region of THINGS map.
-            # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
-            axissum = [0] * 2
-            lc = np.zeros([2,2], dtype=int)
-            for i in xrange(2):
-                axissum[i] = np.nansum(things, axis=i, dtype=bool)
-                for j in xrange(len(axissum[i])):
-                    if axissum[i][j]:
-                        lc[i-1, 0] = j
-                        break
-                lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
-
-            # Cut the images and masks!!!
-            things = things[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
-            heracles = heracles[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
-            # To avoid np.nan in H2 + signal in HI
-            heracles[np.isnan(heracles)] = 0 
-            total_gas = col2sur * (2 * heracles + things)
-
-            # Create some parameters for calculating radial distribution
-            with File('output/RGD_data.h5', 'a') as hf:
-                grp = hf[name]
-                diskmask = np.array(grp['Diskmask'])
-                total_gas[~diskmask] = np.nan
-                grp.create_dataset('Total_gas_XCOM=' + 
-                                   str(round(self.XCO_multiplier, 2)), 
-                                   data=total_gas)
+            """
         print('All data saved.')
