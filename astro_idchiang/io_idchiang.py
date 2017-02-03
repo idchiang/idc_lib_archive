@@ -3,8 +3,6 @@ from __future__ import absolute_import, division, print_function, \
 range = xrange
 import os
 import numpy as np
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
@@ -17,6 +15,7 @@ from .plot_idchiang import imshowid
 from . import regrid_idchiang as ric
 
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
+H2HaHe = 1.36
 
 """
 HOI UGC05139
@@ -102,7 +101,7 @@ class Surveys(object):
                     self.galaxy_data['BMIN'] = [1.0] * len(self.galaxy_data)            
                     self.galaxy_data['BPA'] = [0.0] * len(self.galaxy_data)     
                 for name in names:
-					self.add_galaxy(name, survey)
+                    self.add_galaxy(name, survey)
 		
     def add_galaxy(self, name, survey, filename=None):
         """   
@@ -196,7 +195,7 @@ class Surveys(object):
             data, hdr = fits.getdata(filename, 0, header=True)
 
             if survey == 'THINGS':
-                # THINGS: Raw data in JY/B*M. Change to
+                # THINGS: Raw data in JY/B*M/s. Change to
                 # column density 1/cm^2    
                 data = data[0, 0]
                 data *= 1.823E18 * 6.07E5 / 1.0E3 / s.BMAJ / s.BMIN                
@@ -204,9 +203,8 @@ class Surveys(object):
                 # HERACLES: Raw data in K*km/s. Change to
                 # column density 1/cm^2
                 # This is a calculated parameter by fitting HI to H2 mass
-                R21 = 0.8
-                XCO = 2.0E20
-                data *= XCO * (R21 / 0.8)
+                R21 = 0.7
+                data *= R21 * s['ACO']
             else:
                 if survey in ['PACS_160', 'PACS_100']:
                     data = data[0]
@@ -271,10 +269,13 @@ class Surveys(object):
         FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, 
                 'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, 
                 'HERACLES': 13}
+        # Note: pixel scale of SPIRE 500 ~ 14.00
         if not FWHM1s:
             for name1 in name1s:
                 FWHM1s.append(FWHM[name1])
         FWHM2 = FWHM[name2] if (not FWHM2) else FWHM2
+        print(filenames, len(filenames))
+        print(name1s, len(name1s))
         assert len(filenames) == len(name1s)
         assert len(FWHM1s) == len(name1s)            
 
@@ -454,7 +455,7 @@ class Surveys(object):
             heracles = heracles[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             # To avoid np.nan in H2 + signal in HI
             heracles[np.isnan(heracles)] = 0 
-            total_gas = col2sur * (2 * heracles + things)
+            total_gas = col2sur * H2HaHe * things + heracles
             sed = sed[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
             diskmask = diskmask[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             dp_radius = dp_radius[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
@@ -472,6 +473,8 @@ class Surveys(object):
             with File('output/RGD_data.h5', 'a') as hf:
                 grp = hf.create_group(name)
                 grp.create_dataset('Total_gas', data=total_gas)
+                grp.create_dataset('THINGS', data=things)
+                grp.create_dataset('HERACLES', data=heracles)
                 grp.create_dataset('Herschel_SED', data=sed)
                 grp.create_dataset('Herschel_bkgerr', data=bkgerr)
                 grp.create_dataset('Diskmask', data=diskmask)
@@ -484,6 +487,7 @@ class Surveys(object):
                                    data=self.df.loc[(name, 'SPIRE_500')].PS)
                 grp.create_dataset('THINGS_LIMIT', data=THINGS_Limit)
                 grp.create_dataset('DP_RADIUS', data=dp_radius) # kpc
+            """
             plt.figure()
             plt.subplot(2, 4, 1)
             imshowid(np.log10(total_gas))
@@ -499,4 +503,5 @@ class Surveys(object):
             plt.savefig('output/RGD_data/' + name + '.png')
             plt.clf()
             plt.close()
+            """
         print('All data saved.')
