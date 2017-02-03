@@ -1,6 +1,5 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
-range = xrange
 import numpy as np
 from time import clock
 import matplotlib.pyplot as plt
@@ -10,29 +9,30 @@ import astropy.units as u
 from astropy.constants import c
 from astro_idchiang.external import voronoi_2d_binning_m
 from astro_idchiang import imshowid
+range = xrange
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
 nu = (c / wl / u.um).to(u.Hz)
 const = 2.0891E-4
-kappa160 = 9.6 * np.pi # fitting uncertainty = 1.3
-                       # Calibration uncertainty = 2.5
-                       # 01/13/2017: pi facor added from erratum
-WDC = 2900 # Wien's displacement constant (um*K)
+kappa160 = 9.6 * np.pi
+# fitting uncertainty = 1.3, Calibration uncertainty = 2.5
+# 01/13/2017: pi facor added from erratum
+WDC = 2900  # Wien's displacement constant (um*K)
 
 # Column density to mass surface density M_sun/pc**2
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 
-THINGS_Limit = 1.0E18 # HERACLES_LIMIT: heracles*2 > things
+THINGS_Limit = 1.0E18  # HERACLES_LIMIT: heracles*2 > things
 
-FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15, 
-        'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04, 
+FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15,
+        'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04,
         'HERACLES': 13}
-fwhm_sp500 = FWHM['SPIRE_500'] * u.arcsec.to(u.rad) # in rad
+fwhm_sp500 = FWHM['SPIRE_500'] * u.arcsec.to(u.rad)  # in rad
 
 # Calibration error of PACS_100, PACS_160, SPIRE_250, SPIRE_350, SPIRE_500
 # For extended source
-calerr_matrix2 = np.array([0.10,0.10,0.08,0.08,0.08]) ** 2
+calerr_matrix2 = np.array([0.10, 0.10, 0.08, 0.08, 0.08]) ** 2
 
 # Number of fitting parameters
 ndim = 2
@@ -58,10 +58,10 @@ def fit_dust_density(name='NGC3198', nwalkers=20, nsteps=150):
     targetSN = 5
     # Dust density in Solar Mass / pc^2
     # kappa_lambda in cm^2 / g
-    # SED in MJy / sr        
+    # SED in MJy / sr
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
-        total_gas = np.array(grp['Total_gas'])
+        # total_gas = np.array(grp['Total_gas'])
         sed = np.array(grp['Herschel_SED'])
         bkgerr = np.array(grp['Herschel_bkgerr'])
         diskmask = np.array(grp['Diskmask'])
@@ -81,25 +81,25 @@ def fit_dust_density(name='NGC3198', nwalkers=20, nsteps=150):
     x_d, y_d = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
     x_d, y_d = x_d[diskmask], y_d[diskmask]
     # Dividing into layers
-    
+
     fwhm_radius = fwhm_sp500 * D * 1E3 / np.cos(INCL * np.pi / 180)
     nlayers = int(np.nanmax(dp_radius) // fwhm_radius)
     masks = []
     masks.append(dp_radius < fwhm_radius)
     for i in range(1, nlayers - 1):
-        masks.append((dp_radius >= i * fwhm_radius) * 
+        masks.append((dp_radius >= i * fwhm_radius) *
                      (dp_radius < (i + 1) * fwhm_radius))
     masks.append(dp_radius >= (nlayers - 1) * fwhm_radius)
-    ##### test image: original layers #####
+    # test image: original layers #
 
     image_test1 = np.full_like(dp_radius, np.nan)
     for i in range(nlayers):
         image_test1[masks[i]] = i
     #####
 
-    
     for i in range(nlayers - 1, -1, -1):
-        judgement = np.abs(np.sum(signal_d[masks[i][diskmask]])) / np.sqrt(len(masks[i][diskmask]))
+        judgement = np.abs(np.sum(signal_d[masks[i][diskmask]])) / \
+            np.sqrt(len(masks[i][diskmask]))
         if judgement < targetSN:
             if i > 0:
                 masks[i - 1] += masks[i]
@@ -108,7 +108,7 @@ def fit_dust_density(name='NGC3198', nwalkers=20, nsteps=150):
                 masks[0] += masks[1]
                 del masks[1]
     nlayers = len(masks)
-    ##### test image: combined layers #####
+    # test image: combined layers #
 
     image_test2 = np.full_like(dp_radius, np.nan)
     for i in range(nlayers):
@@ -126,7 +126,7 @@ def fit_dust_density(name='NGC3198', nwalkers=20, nsteps=150):
             binNum_l = np.arange(len(signal_l))
         else:
             binNum_l, xNode, yNode, xBar, yBar, sn, nPixels, scale = \
-                voronoi_2d_binning_m(x_l, y_l, signal_l, noise_l, targetSN, 
+                voronoi_2d_binning_m(x_l, y_l, signal_l, noise_l, targetSN,
                                      pixelsize=1, plot=False, quiet=True)
         binNum_l += max_binNum
         max_binNum = np.max(binNum_l)
@@ -137,7 +137,7 @@ def fit_dust_density(name='NGC3198', nwalkers=20, nsteps=150):
     binmap = binmap.astype(float)
     binmap[binmap < 0] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
-    
+
     image_test0 = np.abs(sed / bkgerr)
     image_test0 = np.min(image_test0, axis=2)
     plt.figure()

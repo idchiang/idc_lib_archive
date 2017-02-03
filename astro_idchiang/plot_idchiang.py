@@ -1,22 +1,24 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
-range = xrange
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
+range = xrange
+
 
 def imshowid(image):
     plt.imshow(image, origin='lower')
     plt.colorbar()
 
+
 def imshow_log(image, vmin=None, vmax=None):
-    if vmin == None:
-        vmin = min(image[image>0].flatten())
-    if vmax == None:
+    if vmin is None:
+        vmin = min(image[image > 0].flatten())
+    if vmax is None:
         vmax = max(image.flatten())
-    plt.imshow(image, origin ='lower', norm=LogNorm(vmin=vmin, vmax=vmax))
+    plt.imshow(image, origin='lower', norm=LogNorm(vmin=vmin, vmax=vmax))
     plt.colorbar()
-    
-""" 
+
+"""
 Might be useful in the future!!
 
 fig = plt.figure(figsize=(8, 8))

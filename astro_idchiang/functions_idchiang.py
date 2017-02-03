@@ -1,8 +1,11 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
-range = xrange
 import numpy as np
+range = xrange
+
+
 FWHM2sigma = 0.5 / np.sqrt(2*np.log(2))
+
 
 def Gaussian_rot(x_in, y_in, x_c, y_c, bpa, bmaj, bmin, ps):
     """
@@ -17,9 +20,9 @@ def Gaussian_rot(x_in, y_in, x_c, y_c, bpa, bmaj, bmin, ps):
             y and x axis FWHM of the Gaussian in arcsec.
         ps: <list of float>
             Pixel scale of the PSF in arcsec. Shape (2).
-	Outputs:
-	    Gaussian_PSF: <numpy array of float>
-	        The generated PSF. Shape [l, l] 
+    Outputs:
+        Gaussian_PSF: <numpy array of float>
+            The generated PSF. Shape [l, l]
     """
     x = (x_in - x_c) * ps[0]
     y = (y_in - y_c) * ps[1]
@@ -33,6 +36,7 @@ def Gaussian_rot(x_in, y_in, x_c, y_c, bpa, bmaj, bmin, ps):
     d = sinbpa**2 / 2 / bmin**2 + cosbpa**2 / 2 / bmaj**2
     return np.exp(-(a * x**2 + 2 * b * x * y + d * y**2))
 
+
 def Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM=25):
     """
     Inputs:
@@ -44,9 +48,9 @@ def Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM=25):
             y and x axis FWHM of the first Gaussian in arcsec.
         FWHM: <float>
             FWHM of the second Gaussian in arcsec.
-	Outputs:
-	    Gaussian_Kernel_C1: <numpy array of float>
-	        The generated Kernel with pixel scale ps. 
+    Outputs:
+        Gaussian_Kernel_C1: <numpy array of float>
+        The generated Kernel with pixel scale ps.
     """
     # Converting scales
     bpa *= np.pi / 180
@@ -59,6 +63,7 @@ def Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM=25):
     xp, yp = cosbpa * x + sinbpa * y, cosbpa * y - sinbpa * x
     result = np.exp(-0.5 * (xp**2 / sigma_x_sq + yp**2 / sigma_y_sq))
     return result / np.sum(result)
-    
+
+
 def reasonably_close(a, b, pct_err):
     return np.sqrt(np.sum((a - b)**2) / np.sum(a**2)) < (pct_err / 100)

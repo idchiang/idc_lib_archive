@@ -1,16 +1,17 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
-range = xrange
 import numpy as np
 from scipy.interpolate import interp2d, griddata
 from astropy.convolution import convolve_fft
 from time import clock
 from .functions_idchiang import reasonably_close, Gaussian_Kernel_C1
+range = xrange
 
-## If rm_bad_pts becomes less than threshold after convolution, remove.
+# If rm_bad_pts becomes less than threshold after convolution, remove.
 threshold = 0.9
 
-def Kernel_regrid(kernels, ps_new, name1, name2, target_name=None, 
+
+def Kernel_regrid(kernels, ps_new, name1, name2, target_name=None,
                   method='cubic'):
     """
     Inputs:
@@ -37,19 +38,17 @@ def Kernel_regrid(kernels, ps_new, name1, name2, target_name=None,
         """
         ps_new = df.xs(target_name, level = 1).PS.values[0]
         """
-                
         # Check if the kernel is squared / odd pixel
         assert kernel.shape[0] == kernel.shape[1]
         assert len(kernel) % 2
-        
         # Generating grid points. Ref Anaino total dimension ~729", half 364.5"
-        l = (len(kernel) - 1) // 2        
+        l = (len(kernel) - 1) // 2
         x = np.arange(-l, l + 1) * ps[0] / ps_new[0]
         y = np.arange(-l, l + 1) * ps[1] / ps_new[1]
         lxn, lyn = (l * ps[0]) // ps_new[0], (l * ps[1]) // ps_new[1]
         xn, yn = np.arange(-lxn, lxn + 1), np.arange(-lyn, lyn + 1)
-
-        print("Start regridding \"" + name1 + " to " + name2 + 
+        # Start binning
+        print("Start regridding \"" + name1 + " to " + name2 +
               "\" kernel to match " + target_name + " map...")
         tic = clock()
         k = interp2d(x, y, kernel, kind=method, fill_value=np.nan)
@@ -62,9 +61,10 @@ def Kernel_regrid(kernels, ps_new, name1, name2, target_name=None,
         print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
         print("Kernel sum:", np.sum(n_kernel))
         return n_kernel
-            
+
     except KeyError:
         print("Warning: kernel or target does not exist.")
+
 
 def matching_PSF_1step(df, kernels, name, survey1, survey2):
     """
@@ -85,7 +85,7 @@ def matching_PSF_1step(df, kernels, name, survey1, survey2):
         kernel: <numpy array>
             Regridded kernel
     """
-    ## Grabbing information
+    # Grabbing information
     ps = df.xs(survey1, level=1).PS.values[0]
     ps2 = kernels.loc[survey1, survey2].PS
     if reasonably_close(ps, ps2, 2.0):
@@ -112,6 +112,7 @@ def matching_PSF_1step(df, kernels, name, survey1, survey2):
     f1, f2 = np.nansum(image1), np.nansum(image1_2)
     print("Normalized flux variation:", np.abs(f1 - f2) / f1)
     return image1_2, ps, kernel
+
 
 def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
     """
@@ -142,7 +143,7 @@ def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
             kernel2 = kernels.loc[k2_survey1, k2_survey2].RGDKERNEL
         else:
             ps2 = ps
-            kernel2 = Kernel_regrid(kernels, ps, k2_survey1, k2_survey2)   
+            kernel2 = Kernel_regrid(kernels, ps, k2_survey1, k2_survey2)
 
     bpa = df.loc[name, survey1].BPA
     bmaj = df.loc[name, survey1].BMAJ
@@ -174,6 +175,7 @@ def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
     print("                           overall:    ", np.abs(f1 - f3) / f1)
     return image1_2, ps2, kernel2
 
+
 def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
     """
     Inputs:
@@ -191,23 +193,23 @@ def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
     """
     value = df.loc[name, fine_survey].CVL_MAP
     if len(value) == 1:
-        print(name + " " + fine_survey + 
+        print(name + " " + fine_survey +
               " map has not been convolved. Please convolve first.")
         pass
     else:
-        print("Start matching " + name + " " + fine_survey + 
+        print("Start matching " + name + " " + fine_survey +
               " grid to match " + course_survey + "...")
         tic = clock()
         w1 = df.loc[name, fine_survey].WCS
-        naxis12, naxis11 = df.loc[name, fine_survey].L   # RA, Dec
+        naxis12, naxis11 = df.loc[name, fine_survey].L    # RA, Dec
         w2 = df.loc[name, course_survey].WCS
-        naxis22, naxis21 = df.loc[name, course_survey].L # RA, Dec
+        naxis22, naxis21 = df.loc[name, course_survey].L  # RA, Dec
 
         xg, yg = np.meshgrid(np.arange(naxis11), np.arange(naxis12))
         xwg, ywg = w1.wcs_pix2world(xg, yg, 1)
         xg, yg = w2.wcs_world2pix(xwg, ywg, 1)
         xng, yng = np.meshgrid(np.arange(naxis21), np.arange(naxis22))
-        
+
         assert np.size(value) == np.size(xg) == np.size(yg)
         s = np.size(value)
         value = value.reshape(s)
