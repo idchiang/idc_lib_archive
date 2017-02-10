@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 import os
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import pandas as pd
 import astropy.units as u
 from astropy.io import fits
@@ -243,6 +243,8 @@ class Surveys(object):
                 data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
             s['PS'] = ps
             s['CVL_MAP'] = np.zeros([1, 1])
+            if survey in ['KINGFISHSNR']:
+                s['CVL_MAP'] = data
             s['RGD_MAP'] = np.zeros([1, 1])
             s['CAL_MASS'] = 0
             s['DP_RADIUS'] = self.dp_radius(s) if \
@@ -289,8 +291,6 @@ class Surveys(object):
             for name1 in name1s:
                 FWHM1s.append(FWHM[name1])
         FWHM2 = FWHM[name2] if (not FWHM2) else FWHM2
-        print(filenames, len(filenames))
-        print(name1s, len(name1s))
         assert len(filenames) == len(name1s)
         assert len(FWHM1s) == len(name1s)
 
@@ -525,3 +525,24 @@ class Surveys(object):
         names = [names] if type(names) == str else names
         for name in names:
             print('Saving', name, 'KINGFISH SNR...')
+            things = self.df.loc[(name, 'THINGS')].RGD_MAP
+            kingfishsnr = self.df.loc[(name, 'KINGFISHSNR')].RGD_MAP
+            # Cutting off the nan region of THINGS map.
+            # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
+            axissum = [0] * 2
+            lc = np.zeros([2, 2], dtype=int)
+            for i in xrange(2):
+                axissum[i] = np.nansum(things, axis=i, dtype=bool)
+                for j in xrange(len(axissum[i])):
+                    if axissum[i][j]:
+                        lc[i-1, 0] = j
+                        break
+                lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
+
+            # Cut the images and masks!!!
+            kingfishsnr = kingfishsnr[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+
+            with File('output/RGD_data.h5', 'a') as hf:
+                grp = hf[name]
+                grp.create_dataset('KINGFISHSNR', data=kingfishsnr)
+        print('All data saved.')

@@ -1,6 +1,6 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
-from astro_idchiang import Surveys, read_dust_file
+from astro_idchiang import Surveys, read_dust_file, vs_KINGFISH
 from astro_idchiang import fit_dust_density as fdd
 range = xrange
 # execfile('IDC_astro.py')
@@ -51,8 +51,23 @@ def fitting(samples=all_objects, nwalkers=10, nsteps=500, bins=30, off=-22.5):
         read_dust_file(sample, bins=bins, off=off)
 
 
-def misc(samples=['NGC0628'], nwalkers=10, nsteps=500, bins=30, off=-22.5,
+def read(samples=['NGC0628'], nwalkers=10, nsteps=500, bins=30, off=-22.5,
          cmap0='gist_heat', dr25=0.025):
     samples = [samples] if type(samples) == str else samples
     for sample in samples:
         read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
+
+
+def KINGFISH(samples=all_objects):
+    cmaps = Surveys(samples, ['THINGS', 'KINGFISHSNR', 'SPIRE_500'])
+    cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
+    cmaps.matching_PSF_2step(samples, ['THINGS'], 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(samples, ['THINGS', 'KINGFISHSNR'], 'SPIRE_500')
+    cmaps.saving_KINGFISHSNR(samples)
+
+
+def misc(test=1, targetSNR=10, dr25=0.025):
+    samples = ['NGC0628'] if test else all_objects
+    for sample in samples:
+        # vs_KINGFISH(name=sample, targetSNR=targetSNR, dr25=dr25)
+        read_dust_file(name=sample, dr25=dr25)

@@ -160,7 +160,6 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
             grp.create_dataset('PA', data=PA)
             grp.create_dataset('PS', data=PS)
             grp.create_dataset('Radius_map', data=ept)  # kpc
-        # return None
 
     fwhm_radius = fwhm_sp500 * D * 1E3 / np.cos(INCL * np.pi / 180)
     nlayers = int(np.nanmax(dp_radius) // fwhm_radius)
@@ -171,7 +170,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
                      (dp_radius < (i + 1) * fwhm_radius))
     masks.append(dp_radius >= (nlayers - 1) * fwhm_radius)
     masks = [masks[i][diskmask] for i in range(nlayers)]
-    # test image: original layers #
+    # test image: original layers
     """
     image_test1 = np.full_like(dp_radius, np.nan)
     for i in range(nlayers):
@@ -443,6 +442,12 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
         heracles = np.array(grp['HERACLES'])
         diskmask = np.array(grp['Diskmask'])
 
+    nanmask = np.isnan(total_gas) + np.isnan(things) + np.isnan(heracles)
+    total_gas[nanmask], things[nanmask], heracles[nanmask] = -1., -1., -1.
+    total_gas[np.less_equal(total_gas, 0)] = np.nan
+    things[np.less_equal(things, 0)] = np.nan
+    heracles[np.less_equal(heracles, 0)] = np.nan
+
     lnprob = np.full_like(logs_d, np.nan)
     binlist = np.unique(binmap[diskmask])
     for bin_ in binlist:
@@ -511,8 +516,6 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
     fig.savefig('output/' + name + '_DGR_Sd_GAS.png')
     fig.clf()
 
-    plt.close("all")
-
     # Reducing data to 1-dim
     r_r25 = np.array([radiusmap[binmap == temp][0] for temp in binlist]) / R25
     r_logdgr = np.array([logdgr[binmap == temp][0] for temp in binlist])
@@ -520,8 +523,12 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
     r_logHI = np.array([logs_HI[binmap == temp][0] for temp in binlist])
     r_logH2 = np.array([logs_H2[binmap == temp][0] for temp in binlist])
     r_area = np.array([np.sum(binmap == temp) for temp in binlist])
+
+    nanmask = np.isnan(r_logsg)
+    r_logsg[nanmask] = 0.
     r_gmass = r_area * 10**r_logsg
-    mask = ~np.isnan(r_r25 + r_logsg + r_area)
+    r_gmass[nanmask] = np.nan
+    mask = ~np.isnan(r_r25 + r_logsg + r_area + r_gmass)
     r_r25, r_logdgr, r_logsg, r_area, r_gmass, r_logHI, r_logH2 = \
         r_r25[mask], r_logdgr[mask], r_logsg[mask], r_area[mask], \
         r_gmass[mask], r_logHI[mask], r_logH2[mask]
@@ -541,14 +548,14 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
     cax = np.empty_like(ax)
     # fig.set_size_inches(15, 12)
     cax[0] = ax[0].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmass,
-                          cmap=cmap0, norm=LogNorm())
+                          cmap='Greys', norm=LogNorm())
     ax[0].set_xlabel(r'Radius ($R_{25}$)', size=16)
     ax[0].set_ylabel(r'DGR (log)', size=16)
     ax[0].set_title('Gas mass weighted', size=20)
     fig.colorbar(cax[0][3], ax=ax[0])
 
     cax[1] = ax[1].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmassdtm,
-                          cmap=cmap0, norm=LogNorm())
+                          cmap='Greys', norm=LogNorm())
     ax[1].set_xlabel(r'Radius ($R_{25}$)', size=16)
     ax[1].set_ylabel(r'DGR (log)', size=16)
     ax[1].set_title('Ring-normalized gas mass weighted', size=20)
@@ -559,7 +566,7 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
         ax[i].set_xlim([0., np.max(r_r25)+0.1])
         ax[i].set_ylim([np.min(r_logdgr)-0.1, np.max(r_logdgr)+0.1])
     fig.savefig('output/' + name + '_DGR_hist2d.png')
-    # fig.clf()
+    fig.clf()
 
     # Redistributing data to rings
     nlayers = int(np.max(r_r25) // dr25)
@@ -580,30 +587,114 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
                              tm[i])
         HI_ri[i] = np.log10(np.sum(10**r_logHI[mask] * r_gmass[mask]) / tm[i])
         H2_ri[i] = np.log10(np.sum(10**r_logH2[mask] * r_gmass[mask]) / tm[i])
-    fig, ax = plt.subplots(3, 1, figsize=(10, 20))
+
+    fig, ax = plt.subplots(2, 1, figsize=(10, 15))
     # fig.set_size_inches(15, 12)
     # Note: it's the ring-mass normalized one here
     cax = ax[0].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmassdtm,
-                       cmap=cmap0, norm=LogNorm())
+                       cmap='Greys', norm=LogNorm())
+    # fig.colorbar(cax[3], ax=ax[0])
+    ax[0].plot(r_ri, dgr_ri, lw=5.)
     ax[0].set_ylabel(r'DGR (log)', size=16)
-    ax[0].set_title('Gas mass weighted profile', size=24, y=1.05)
-    ax[1].plot(r_ri, dgr_ri)
-    ax[1].set_ylabel(r'DGR (log)', size=16)
+    ax[0].set_title(name + 'Gas mass weighted profile', size=24, y=1.05)
 
-    ax[2].plot(r_ri, HI_ri, label="HI")
-    ax[2].plot(r_ri, H2_ri, label="H2")
-    ax[2].set_ylabel(r'Surface density (log)', size=16)
-    ax[2].set_xlabel(r'r25', size=16)
-    ax[2].legend(loc=3)
-    for i in range(3):
+    ax[1].plot(r_ri, HI_ri, label="HI", lw=5.)
+    ax[1].plot(r_ri, H2_ri, label="H2", lw=5.)
+    ax[1].set_ylabel(r'Surface density (log)', size=16)
+    ax[1].set_xlabel(r'r25', size=16)
+    ax[1].legend(loc=3, fontsize=16)
+    for i in range(2):
         ax[i].set_xlim([0., np.max(r_r25)+0.1])
     fig.savefig('output/' + name + '_DGR_profile.png')
-    # fig.clf()
-    # plt.close("all")
+    fig.clf()
+    plt.close("all")
 
 
-def read_dust_test(name='NGC3198', bins=20, off=-22.5):
-    pass
+def vs_KINGFISH(name='NGC3198', targetSNR=10, cmap0='gist_heat', dr25=0.025):
+    with File('output/dust_data.h5', 'r') as hf:
+        grp = hf[name]
+        serr = np.array(grp.get('Dust_surface_density_err_dex'))  # in dex
+        binmap = np.array(grp.get('Binmap'))
+        total_gas = np.array(grp.get('Total_gas'))
+        radiusmap = np.array(grp.get('Radius_map'))  # kpc
+        D = float(np.array(grp['Galaxy_distance']))
+    with File('output/RGD_data.h5', 'r') as hf:
+        grp = hf[name]
+        kfs = np.array(grp.get('KINGFISHSNR'))
+    R25 = gal_data([name]).field('R25_DEG')[0]
+    R25 *= (np.pi / 180.) * (D * 1E3)
+    binlist = np.unique(binmap)
+
+    # Building a binned KINGFISH map for easier radial profile plotting
+    r_kfs = np.empty_like(binlist)
+    for i in range(len(binlist)):
+        mask = binmap == binlist[i]
+        r_kfs[i] = np.nanmean(kfs[mask])
+
+    # Reducing data to 1-dim
+    logs_gas = np.log10(total_gas)
+
+    nanmask = np.isnan(serr)
+    serr[nanmask] = 2.
+    ssnr = 1 / (10**serr - 1)
+    ssnr[nanmask] = np.nan
+
+    r_r25 = np.array([radiusmap[binmap == temp][0] for temp in binlist]) / R25
+    r_logsg = np.array([logs_gas[binmap == temp][0] for temp in binlist])
+    r_ssnr = np.array([ssnr[binmap == temp][0] for temp in binlist])
+    r_area = np.array([np.sum(binmap == temp) for temp in binlist])
+
+    nanmask = np.isnan(r_logsg)
+    r_logsg[nanmask] = 0.
+    r_gmass = r_area * 10**r_logsg
+    r_gmass[nanmask] = np.nan
+
+    mask = ~np.isnan(r_r25 + r_logsg + r_area + r_kfs + r_ssnr)
+    r_r25, r_logsg, r_gmass, r_kfs, r_ssnr = \
+        r_r25[mask], r_logsg[mask], r_gmass[mask], r_kfs[mask], r_ssnr[mask]
+
+    # Redistributing data to rings
+    nlayers = int(np.max(r_r25) // dr25)
+    masks = [(r_r25 < dr25)]
+    for i in range(1, nlayers - 1):
+        masks.append((r_r25 >= i * dr25) * (r_r25 < (i + 1) * dr25))
+    masks.append(r_r25 >= (nlayers - 1) * dr25)
+    masks = np.array(masks)
+    tm = np.array([np.sum(r_gmass[masks[i]]) for i in range(len(masks))])
+    masks, tm = masks[tm.astype(bool)], tm[tm.astype(bool)]
+    nlayers = len(masks)
+    r_ri, ssnr_ri, kfs_ri = np.empty(nlayers), np.empty(nlayers), \
+        np.empty(nlayers)
+    for i in range(nlayers):
+        mask = masks[i]
+        r_ri[i] = np.sum(r_r25[mask] * r_gmass[mask]) / tm[i]
+        ssnr_ri[i] = np.sum(r_ssnr[mask] * r_gmass[mask]) / tm[i]
+        kfs_ri[i] = np.sum(r_kfs[mask] * r_gmass[mask]) / tm[i]
+
+    # Total gas & DGR
+    fig, ax = plt.subplots(2, 2, figsize=(20, 20))
+    cax = np.empty_like(ax)
+    fig.suptitle(name, size=28, y=0.995)
+    cax[0, 0] = ax[0, 0].imshow(kfs, origin='lower', cmap=cmap0,
+                                vmax=targetSNR)
+    ax[0, 0].set_title('Fitting SNR (KINGFISH)', size=20)
+    fig.colorbar(cax[0, 0], ax=ax[0, 0])
+    ax[0, 1].plot(r_ri, kfs_ri)
+    ax[0, 1].set_ylabel('Average SNR')
+    ax[0, 1].set_xlabel('r25')
+    cax[1, 0] = ax[1, 0].imshow(ssnr, origin='lower', cmap=cmap0,
+                                vmax=targetSNR)
+    ax[1, 0].set_title('Fitting SNR (This work)', size=20)
+    fig.colorbar(cax[1, 0], ax=ax[1, 0])
+    ax[1, 1].plot(r_ri, ssnr_ri)
+    ax[1, 1].set_ylabel('Average SNR')
+    ax[1, 1].set_xlabel('r25')
+    fig.tight_layout()
+    fig.subplots_adjust(wspace=0.25)
+    fig.savefig('output/' + name + '_vs_KINGFISH.png')
+    fig.clf()
+
+    plt.close("all")
 
 """
 def reject_outliers(data, sig=2.):
