@@ -4,11 +4,11 @@ PACKAGE NAME:
 
 AUTHOR:
     I-Da Chiang (idchiang@ucsd.edu)
-	
+
 PURPOSE:
     1. Calculate total flux and radial profile of a survey
     2. Convolve, matching, regridding, and cutting maps from different surveys
-	
+
 HISTORY:
     06/30/2016, ver. 0.0
         -- File created.
@@ -25,9 +25,9 @@ HISTORY:
         -- Unify method for calculating pixel scale
     08/03/2016, ver. 1.2.1
         -- Fixing FWHM --> sigma errors
-	??/??/????, ver. ?.?.?
-	    -- Transform into package
-		-- Finish dust fitting functions
+    ??/??/????, ver. ?.?.?
+        -- Transform into package
+        -- Finish dust fitting functions
 
 CURRENT TO DO:
     1. Dust surface mass density fitting
