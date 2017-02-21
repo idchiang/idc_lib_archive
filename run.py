@@ -67,7 +67,7 @@ def KINGFISH(samples=all_objects):
 
 
 def misc(test=1, targetSNR=10, dr25=0.025):
-    samples = ['NGC0628'] if test else all_objects
+    samples = ['NGC5457'] if test else all_objects
     for sample in samples:
         # vs_KINGFISH(name=sample, targetSNR=targetSNR, dr25=dr25)
         read_dust_file(name=sample, dr25=dr25)

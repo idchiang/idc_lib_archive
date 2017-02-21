@@ -224,6 +224,12 @@ class Surveys(object):
                         data[x[i], y[i]], data2[x[i], y[i]] = 1., 1E-3
                 data /= data2
                 data = np.abs(data)
+            elif survey == 'SPIRE_500':
+                data *= 0.9195
+            elif survey == 'SPIRE_350':
+                data *= 0.9351
+            elif survey == 'SPIRE_250':
+                data *= 0.9282
 
             w = wcs.WCS(hdr, naxis=2)
             # add the generated data to dataframe
