@@ -1,2 +1,2 @@
-# Astro_IDC
-My repository for astrophysics
+# idc_lib
+My repository for (mainly) astrophysics
