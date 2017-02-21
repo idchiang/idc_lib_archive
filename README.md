@@ -1,2 +1,3 @@
 # idc_lib
-My repository for (mainly) astrophysics
+I-Da Chiang's repository for (mainly) astrophysics
+jiang696@gmail.com

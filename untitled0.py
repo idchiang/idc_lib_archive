@@ -7,8 +7,7 @@ from h5py import File
 
 import astropy.units as u
 from astropy.constants import c
-from astro_idchiang.external import voronoi_2d_binning_m
-from astro_idchiang import imshowid
+from idc import imshowid, idc_voronoi
 range = xrange
 
 # Dust fitting constants

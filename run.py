@@ -1,7 +1,7 @@
 from __future__ import absolute_import, division, print_function, \
                        unicode_literals
-from astro_idchiang import Surveys, read_dust_file, vs_KINGFISH
-from astro_idchiang import fit_dust_density as fdd
+from idc_lib import Surveys, read_dust_file
+from idc_lib import fit_dust_density as fdd
 range = xrange
 # execfile('IDC_astro.py')
 """
@@ -26,6 +26,9 @@ Corner:
 all_objects = ['IC2574', 'NGC0628', 'NGC0925', 'NGC2841', 'NGC2976', 'NGC3077',
                'NGC3184', 'NGC3198', 'NGC3351', 'NGC3521', 'NGC3627',
                'NGC4736', 'NGC5055', 'NGC5457', 'NGC6946', 'NGC7331']
+SST = ['NGC0628', 'NGC3198']  # SST for "Small Scale Test"
+SSST = ['NGC0628']  # SSST for "Super Small Scale Test"
+M101 = ['NGC5457']  # Currently focusing on NGC5457
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250',
                'PACS_160', 'PACS_100', 'HERACLES']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
@@ -35,7 +38,12 @@ fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES']
 
 
-def generator(samples=all_objects):
+def generator(test=1, samples=M101):
+    if test:
+        samples = SST
+    elif type(samples) == str:
+        samples = [samples]
+
     cmaps = Surveys(samples, all_surveys)
     cmaps.add_kernel(all_kernels, 'SPIRE_500')
     cmaps.matching_PSF_1step(samples, MP1, 'SPIRE_500')
@@ -44,21 +52,34 @@ def generator(samples=all_objects):
     cmaps.save_data(samples)
 
 
-def fitting(samples=all_objects, nwalkers=10, nsteps=500, bins=30, off=-22.5):
-    samples = [samples] if type(samples) == str else samples
+def fitting(test=1, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5):
+    if test:
+        samples = SSST
+    elif type(samples) == str:
+        samples = [samples]
+
     for sample in samples:
         fdd(sample, nwalkers=nwalkers, nsteps=nsteps)
         read_dust_file(sample, bins=bins, off=off)
 
 
-def read(samples=['NGC0628'], nwalkers=10, nsteps=500, bins=30, off=-22.5,
+def read(test=1, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
          cmap0='gist_heat', dr25=0.025):
-    samples = [samples] if type(samples) == str else samples
+    if test:
+        samples = SSST
+    elif type(samples) == str:
+        samples = [samples]
+
     for sample in samples:
         read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
 
 
-def KINGFISH(samples=all_objects):
+def KINGFISH(test=1, samples=M101):
+    if test:
+        samples = SSST
+    elif type(samples) == str:
+        samples = [samples]
+
     cmaps = Surveys(samples, ['THINGS', 'KINGFISHSNR', 'SPIRE_500'])
     cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
     cmaps.matching_PSF_2step(samples, ['THINGS'], 'Gauss_25', 'SPIRE_500')
@@ -67,7 +88,11 @@ def KINGFISH(samples=all_objects):
 
 
 def misc(test=1, targetSNR=10, dr25=0.025):
-    samples = ['NGC5457'] if test else all_objects
+    if test:
+        samples = SST
+    elif type(samples) == str:
+        samples = [samples]
+
     for sample in samples:
         # vs_KINGFISH(name=sample, targetSNR=targetSNR, dr25=dr25)
         read_dust_file(name=sample, dr25=dr25)

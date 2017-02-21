@@ -8,8 +8,7 @@ from h5py import File
 
 import astropy.units as u
 from astropy.constants import c
-from astro_idchiang.external import voronoi_2d_binning_m
-from astro_idchiang import imshowid
+from idc import imshowid, idc_voronoi
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
