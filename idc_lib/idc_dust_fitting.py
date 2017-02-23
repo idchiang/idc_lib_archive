@@ -614,9 +614,10 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
     plt.close("all")
 
 
-def vs_KINGFISH(name='NGC3198', targetSNR=10, cmap0='gist_heat', dr25=0.025):
+def vs_KINGFISH(name='NGC5457', targetSNR=10, cmap0='gist_heat', dr25=0.025):
     with File('output/dust_data.h5', 'r') as hf:
         grp = hf[name]
+        
         serr = np.array(grp.get('Dust_surface_density_err_dex'))  # in dex
         binmap = np.array(grp.get('Binmap'))
         total_gas = np.array(grp.get('Total_gas'))
@@ -624,7 +625,7 @@ def vs_KINGFISH(name='NGC3198', targetSNR=10, cmap0='gist_heat', dr25=0.025):
         D = float(np.array(grp['Galaxy_distance']))
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
-        kfs = np.array(grp.get('KINGFISHSNR'))
+        kf = np.array(grp.get('KINGFISH'))
     R25 = gal_data([name]).field('R25_DEG')[0]
     R25 *= (np.pi / 180.) * (D * 1E3)
     binlist = np.unique(binmap)
@@ -633,7 +634,7 @@ def vs_KINGFISH(name='NGC3198', targetSNR=10, cmap0='gist_heat', dr25=0.025):
     r_kfs = np.empty_like(binlist)
     for i in range(len(binlist)):
         mask = binmap == binlist[i]
-        r_kfs[i] = np.nanmean(kfs[mask])
+        r_kfs[i] = np.nanmean(kf[mask])
 
     # Reducing data to 1-dim
     logs_gas = np.log10(total_gas)

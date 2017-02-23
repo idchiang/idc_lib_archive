@@ -30,12 +30,12 @@ SST = ['NGC0628', 'NGC3198']  # SST for "Small Scale Test"
 SSST = ['NGC0628']  # SSST for "Super Small Scale Test"
 M101 = ['NGC5457']  # Currently focusing on NGC5457
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250',
-               'PACS_160', 'PACS_100', 'HERACLES']
+               'PACS_160', 'PACS_100', 'HERACLES', 'KINGFISH_DUST']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
 MP2 = ['THINGS', 'HERACLES']
 MP1 = ['SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
-                'PACS_100', 'HERACLES']
+                'PACS_100', 'HERACLES', 'KINGFISH_DUST']
 
 
 def generator(test=1, samples=M101):

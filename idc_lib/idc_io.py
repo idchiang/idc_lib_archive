@@ -191,7 +191,7 @@ class Surveys(object):
                            '_heracles_mom0.fits.gz'
                 uncfn = 'data/HERACLES/' + name1.lower() + name2 + \
                         '_heracles_emom0.fits.gz'
-            elif survey == 'KINGFISHSNR':
+            elif survey == 'KINGFISH_DUST':
                 filename = 'data/KINGFISH/' + name1 + name2 + \
                            '_S500_110_SSS_111_Model_SurfBr_Mdust.fits.gz'
                 uncfn = 'data/KINGFISH/' + name1 + name2 + \
@@ -228,18 +228,6 @@ class Surveys(object):
             elif survey in ['PACS_160', 'PACS_100']:
                 data = data[0]
                 # print survey + " not supported for density calculation!!"
-            elif survey == 'KINGFISHSNR':
-                mask = uncdata == 0.0
-                x, y = np.meshgrid(np.arange(data.shape[0]),
-                                   np.arange(data.shape[1]))
-                x, y = x[mask], y[mask]
-                for i in range(len(x)):
-                    if data[x[i], y[i]] == 0.0:
-                        data[x[i], y[i]], uncdata[x[i], y[i]] = np.nan, np.nan
-                    else:
-                        data[x[i], y[i]], uncdata[x[i], y[i]] = 1., 1E-3
-                data /= uncdata
-                data = np.abs(data)
             elif survey == 'SPIRE_500':
                 data *= 0.9195
                 uncdata *= 0.9195
@@ -270,8 +258,9 @@ class Surveys(object):
             s['PS'] = ps
             s['CVL_MAP'] = np.zeros([1, 1])
             s['CVL_UNC'] = np.zeros([1, 1])
-            if survey in ['KINGFISHSNR']:
+            if survey in ['KINGFISH_DUST']:
                 s['CVL_MAP'] = data
+                s['CVL_UNC'] = uncdata
             s['RGD_MAP'] = np.zeros([1, 1])
             s['RGD_UNC'] = np.zeros([1, 1])
             s['CAL_MASS'] = 0
@@ -458,6 +447,7 @@ class Surveys(object):
         for name in names:
             print('Saving', name, 'data...')
             things = self.df.loc[(name, 'THINGS')].RGD_MAP
+            things_unc = self.df.loc[(name, 'THINGS')].RGD_UNC
             # Cutting off the nan region of THINGS map.
             # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
             axissum = [0] * 2
@@ -471,12 +461,23 @@ class Surveys(object):
                 lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
 
             sed = np.zeros([things.shape[0], things.shape[1], 5])
+            sed_unc = np.zeros([things.shape[0], things.shape[1], 5])
+
             heracles = self.df.loc[(name, 'HERACLES')].RGD_MAP
+            kingfish = self.df.loc[(name, 'KINGFISH_DUST')].RGD_MAP
             sed[:, :, 0] = self.df.loc[(name, 'PACS_100')].RGD_MAP
             sed[:, :, 1] = self.df.loc[(name, 'PACS_160')].RGD_MAP
             sed[:, :, 2] = self.df.loc[(name, 'SPIRE_250')].RGD_MAP
             sed[:, :, 3] = self.df.loc[(name, 'SPIRE_350')].RGD_MAP
             sed[:, :, 4] = self.df.loc[(name, 'SPIRE_500')].MAP
+            heracles_unc = self.df.loc[(name, 'HERACLES')].RGD_UNC
+            kingfish_unc = self.df.loc[(name, 'KINGFISH_DUST')].RGD_UNC
+            sed_unc[:, :, 0] = self.df.loc[(name, 'PACS_100')].RGD_UNC
+            sed_unc[:, :, 1] = self.df.loc[(name, 'PACS_160')].RGD_UNC
+            sed_unc[:, :, 2] = self.df.loc[(name, 'SPIRE_250')].RGD_UNC
+            sed_unc[:, :, 3] = self.df.loc[(name, 'SPIRE_350')].RGD_UNC
+            sed_unc[:, :, 4] = self.df.loc[(name, 'SPIRE_500')].UNCMAP
+
             dp_radius = self.df.loc[(name, 'SPIRE_500')].DP_RADIUS
 
             # Using the variance of non-galaxy region as uncertainty
@@ -500,11 +501,17 @@ class Surveys(object):
 
             # Cut the images and masks!!!
             things = things[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+            things_unc = things_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             heracles = heracles[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+            heracles_unc = heracles_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             # To avoid np.nan in H2 + signal in HI
+            heracles_unc[np.isnan(heracles)] = 0
             heracles[np.isnan(heracles)] = 0
             total_gas = col2sur * H2HaHe * things + heracles
+            total_gas_unc = col2sur * H2HaHe * things_unc + heracles_unc
+            kingfish_unc = \
             sed = sed[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
+            sed_unc = sed_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
             diskmask = diskmask[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             dp_radius = dp_radius[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             assert diskmask.shape == dp_radius.shape
@@ -521,9 +528,15 @@ class Surveys(object):
             with File('output/RGD_data.h5', 'a') as hf:
                 grp = hf.create_group(name)
                 grp.create_dataset('Total_gas', data=total_gas)
+                grp.create_dataset('Total_gas_unc', data=total_gas_unc)
                 grp.create_dataset('THINGS', data=things)
+                grp.create_dataset('THINGS_unc', data=things_unc)
                 grp.create_dataset('HERACLES', data=heracles)
+                grp.create_dataset('HERACLES_unc', data=heracles_unc)
+                grp.create_dataset('KINGFISH', data=kingfish)
+                grp.create_dataset('KINGFISH_unc', data=kingfish_unc)
                 grp.create_dataset('Herschel_SED', data=sed)
+                grp.create_dataset('Herschel_SED_unc', data=sed_unc)
                 grp.create_dataset('Herschel_bkgerr', data=bkgerr)
                 grp.create_dataset('Diskmask', data=diskmask)
                 grp.create_dataset('Galaxy_center', data=glx_ctr)
@@ -552,30 +565,4 @@ class Surveys(object):
             plt.clf()
             plt.close()
             """
-        print('All data saved.')
-
-    def saving_KINGFISHSNR(self, names):
-        names = [names] if type(names) == str else names
-        for name in names:
-            print('Saving', name, 'KINGFISH SNR...')
-            things = self.df.loc[(name, 'THINGS')].RGD_MAP
-            kingfishsnr = self.df.loc[(name, 'KINGFISHSNR')].RGD_MAP
-            # Cutting off the nan region of THINGS map.
-            # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
-            axissum = [0] * 2
-            lc = np.zeros([2, 2], dtype=int)
-            for i in xrange(2):
-                axissum[i] = np.nansum(things, axis=i, dtype=bool)
-                for j in xrange(len(axissum[i])):
-                    if axissum[i][j]:
-                        lc[i-1, 0] = j
-                        break
-                lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
-
-            # Cut the images and masks!!!
-            kingfishsnr = kingfishsnr[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
-
-            with File('output/RGD_data.h5', 'a') as hf:
-                grp = hf[name]
-                grp.create_dataset('KINGFISHSNR', data=kingfishsnr)
         print('All data saved.')
