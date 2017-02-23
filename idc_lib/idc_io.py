@@ -95,7 +95,7 @@ class Surveys(object):
                 for name in names:
                     self.add_galaxy(name, survey)
 
-    def add_galaxy(self, name, survey, filename=None):
+    def add_galaxy(self, name, survey, filename=None, uncfn=None):
         """
         Inputs:
             name: <str>
@@ -168,12 +168,18 @@ class Surveys(object):
             elif survey == 'SPIRE_500':
                 filename = 'data/SPIRE/' + name1 + '_' + name2 + \
                            '_I_500um_scan_k2011.fits.gz'
+                uncfn = 'data/SPIRE/' + name1 + '_' + name2 + \
+                        '-I-500um_s_unc-k2011.fits'
             elif survey == 'SPIRE_350':
                 filename = 'data/SPIRE/' + name1 + '_' + name2 + \
                            '_I_350um_scan_k2011.fits.gz'
+                uncfn = 'data/SPIRE/' + name1 + '_' + name2 + \
+                        '-I-350um_s_unc-k2011.fits'
             elif survey == 'SPIRE_250':
                 filename = 'data/SPIRE/' + name1 + '_' + name2 + \
                            '_I_250um_scan_k2011.fits.gz'
+                uncfn = 'data/SPIRE/' + name1 + '_' + name2 + \
+                        '-I-250um_s_unc-k2011.fits'
             elif survey == 'PACS_160':
                 filename = 'data/PACS/' + name1 + '_' + name2 + \
                            '_I_160um_k2011.fits.gz'
@@ -183,9 +189,13 @@ class Surveys(object):
             elif survey == 'HERACLES':
                 filename = 'data/HERACLES/' + name1.lower() + name2 + \
                            '_heracles_mom0.fits.gz'
+                uncfn = 'data/HERACLES/' + name1.lower() + name2 + \
+                        '_heracles_emom0.fits.gz'
             elif survey == 'KINGFISHSNR':
                 filename = 'data/KINGFISH/' + name1 + name2 + \
                            '_S500_110_SSS_111_Model_SurfBr_Mdust.fits.gz'
+                uncfn = 'data/KINGFISH/' + name1 + name2 + \
+                        '_S500_110_SSS_111_Model_SurfBr_Mdust_unc.fits.gz'
             else:
                 raise ValueError(survey + ' not supported.')
 
@@ -194,11 +204,19 @@ class Surveys(object):
             del s['TBMIN'], s['TBMAJ'], s['TBPA']
             data, hdr = fits.getdata(filename, 0, header=True)
 
+            if uncfn:
+                uncdata = fits.getdata(uncfn, 0, header=False)
+            elif survey in ['PACS_100', 'PACS_160']:
+                uncdata = data[1]
+            else:
+                uncdata = None
+
             if survey == 'THINGS':
                 # THINGS: Raw data in JY/B*M/s. Change to
                 # column density 1/cm^2
                 data = data[0, 0]
                 data *= 1.823E18 * 6.07E5 / 1.0E3 / s.BMAJ / s.BMIN
+                uncdata = data * 0.05
             elif survey == 'HERACLES':
                 # HERACLES: Raw data in K*km/s. Change to
                 # surface density M_\odot/pc^2
@@ -206,34 +224,36 @@ class Surveys(object):
                 # This is a calculated parameter by fitting HI to H2 mass
                 R21 = 0.7
                 data *= R21 * s['ACO']
+                uncdata *= R21 * s['ACO']
             elif survey in ['PACS_160', 'PACS_100']:
                 data = data[0]
                 # print survey + " not supported for density calculation!!"
             elif survey == 'KINGFISHSNR':
-                filename = 'data/KINGFISH/' + name1 + name2 + \
-                           '_S500_110_SSS_111_Model_SurfBr_Mdust_unc.fits.gz'
-                data2, hdr2 = fits.getdata(filename, 0, header=True)
-                mask = data2 == 0.0
+                mask = uncdata == 0.0
                 x, y = np.meshgrid(np.arange(data.shape[0]),
                                    np.arange(data.shape[1]))
                 x, y = x[mask], y[mask]
                 for i in range(len(x)):
                     if data[x[i], y[i]] == 0.0:
-                        data[x[i], y[i]], data2[x[i], y[i]] = np.nan, np.nan
+                        data[x[i], y[i]], uncdata[x[i], y[i]] = np.nan, np.nan
                     else:
-                        data[x[i], y[i]], data2[x[i], y[i]] = 1., 1E-3
-                data /= data2
+                        data[x[i], y[i]], uncdata[x[i], y[i]] = 1., 1E-3
+                data /= uncdata
                 data = np.abs(data)
             elif survey == 'SPIRE_500':
                 data *= 0.9195
+                uncdata *= 0.9195
             elif survey == 'SPIRE_350':
                 data *= 0.9351
+                uncdata *= 0.9351
             elif survey == 'SPIRE_250':
                 data *= 0.9282
+                uncdata *= 0.9282
 
             w = wcs.WCS(hdr, naxis=2)
             # add the generated data to dataframe
             s['WCS'], s['MAP'], s['L'] = w, data, np.array(data.shape)
+            s['UNCMAP'] = uncdata
             ctr = s.L // 2
             ps = np.zeros(2)
             xs, ys = \
@@ -249,9 +269,11 @@ class Surveys(object):
                 data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
             s['PS'] = ps
             s['CVL_MAP'] = np.zeros([1, 1])
+            s['CVL_UNC'] = np.zeros([1, 1])
             if survey in ['KINGFISHSNR']:
                 s['CVL_MAP'] = data
             s['RGD_MAP'] = np.zeros([1, 1])
+            s['RGD_UNC'] = np.zeros([1, 1])
             s['CAL_MASS'] = 0
             s['DP_RADIUS'] = self.dp_radius(s) if \
                 (survey == 'SPIRE_500') else np.zeros([1, 1])
@@ -334,10 +356,11 @@ class Surveys(object):
         survey1s = [survey1s] if type(survey1s) == str else survey1s
         for survey1 in survey1s:
             for name in names:
-                cvl_image, new_ps, new_kernel = \
+                cvl_image, cvl_unc, new_ps, new_kernel = \
                     ric.matching_PSF_1step(self.df, self.kernels, name,
                                            survey1, survey2)
                 self.df.set_value((name, survey1), 'CVL_MAP', cvl_image)
+                self.df.set_value((name, survey1), 'CVL_UNC', cvl_unc)
                 self.kernels.set_value((survey1, survey2), 'RGDKERNEL',
                                        new_kernel)
                 self.kernels.set_value((survey1, survey2), 'RGDPS',
@@ -357,10 +380,11 @@ class Surveys(object):
         survey1s = [survey1s] if type(survey1s) == str else survey1s
         for survey1 in survey1s:
             for name in names:
-                cvl_image, new_ps, new_kernel = \
+                cvl_image, cvl_unc, new_ps, new_kernel = \
                     ric.matching_PSF_2step(self.df, self.kernels, name,
                                            survey1, k2_survey1, k2_survey2)
                 self.df.set_value((name, survey1), 'CVL_MAP', cvl_image)
+                self.df.set_value((name, survey1), 'CVL_UNC', cvl_unc)
                 self.kernels.set_value((k2_survey1, k2_survey2), 'RGDKERNEL',
                                        new_kernel)
                 self.kernels.set_value((k2_survey1, k2_survey2), 'RGDPS',
@@ -382,9 +406,11 @@ class Surveys(object):
             fine_surveys
         for fine_survey in fine_surveys:
             for name in names:
-                rgd_image = ric.WCS_congrid(self.df, name, fine_survey,
-                                            course_survey, method)
+                rgd_image, rgd_unc = ric.WCS_congrid(self.df, name,
+                                                     fine_survey,
+                                                     course_survey, method)
                 self.df.set_value((name, fine_survey), 'RGD_MAP', rgd_image)
+                self.df.set_value((name, fine_survey), 'RGD_UNC', rgd_unc)
 
     def dp_radius(self, s):
         """

@@ -74,19 +74,6 @@ def read(test=1, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
         read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
 
 
-def KINGFISH(test=1, samples=M101):
-    if test:
-        samples = SSST
-    elif type(samples) == str:
-        samples = [samples]
-
-    cmaps = Surveys(samples, ['THINGS', 'KINGFISHSNR', 'SPIRE_500'])
-    cmaps.add_kernel(['Gauss_25'], 'SPIRE_500')
-    cmaps.matching_PSF_2step(samples, ['THINGS'], 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(samples, ['THINGS', 'KINGFISHSNR'], 'SPIRE_500')
-    cmaps.saving_KINGFISHSNR(samples)
-
-
 def misc(test=1, targetSNR=10, dr25=0.025):
     if test:
         samples = SST

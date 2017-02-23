@@ -86,32 +86,48 @@ def matching_PSF_1step(df, kernels, name, survey1, survey2):
             Regridded kernel
     """
     # Grabbing information
-    ps = df.xs(survey1, level=1).PS.values[0]
+    ps1 = df.xs(survey1, level=1).PS.values[0]
     ps2 = kernels.loc[survey1, survey2].PS
-    if reasonably_close(ps, ps2, 2.0):
+    if reasonably_close(ps1, ps2, 2.0):
         kernel = kernels.loc[survey1, survey2].KERNEL
     else:
         ps2 = kernels.loc[survey1, survey2].RGDPS
-        if reasonably_close(ps, ps2, 2.0):
+        if reasonably_close(ps1, ps2, 2.0):
             kernel = kernels.loc[survey1, survey2].RGDKERNEL
         else:
-            ps2 = ps
-            kernel = Kernel_regrid(kernels, ps, survey1, survey2)
+            ps2 = ps1
+            kernel = Kernel_regrid(kernels, ps1, survey1, survey2)
 
-    image1 = df.loc[name, survey1].MAP
-    rm_bad_pts = np.full_like(image1, 1)
-    rm_bad_pts[np.isnan(image1)] = 0.0
+    map0 = df.loc[name, survey1].MAP
+    uncmap0 = df.loc[name, survey1].UNCMAP
+
+    ratio = 1E18 if np.nanmax(uncmap0) > 1E18 else 1.0
+    uncmap0 /= ratio
+
+    rm_bad_pts = np.full_like(map0, 1)
+    rm_bad_pts[np.isnan(map0)] = 0.0
+    rm_bad_pts[np.isnan(uncmap0)] = 0.0
     print("Convolving " + name + " " + survey1 + " map (1/1)...")
     tic = clock()
-    image1_2 = convolve_fft(image1, kernel, interpolate_nan=False)
+    # Convolve map
+    map1 = convolve_fft(map0, kernel, interpolate_nan=False)
     rm_bad_pts = convolve_fft(rm_bad_pts, kernel, interpolate_nan=False)
-    image1_2[np.isnan(image1)] = np.nan
-    image1_2[rm_bad_pts < threshold] = np.nan
+    map1[np.isnan(map0)] = np.nan
+    map1[rm_bad_pts < threshold] = np.nan
+    # Convolve uncertainty map
+    uncmap1 = convolve_fft(uncmap0 ** 2, kernel, interpolate_nan=False)
+    with np.errstate(invalid='ignore'):
+        uncmap1 = np.sqrt(uncmap1) * kernels.loc[survey1, survey2].FWHM1 / \
+            kernels.loc[survey1, survey2].FWHM2
+    uncmap1[np.isnan(uncmap0)] = np.nan
+    uncmap1[rm_bad_pts < threshold] = np.nan
+
+    uncmap1 *= ratio
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
-    image1[rm_bad_pts < threshold] = np.nan
-    f1, f2 = np.nansum(image1), np.nansum(image1_2)
+    map0[rm_bad_pts < threshold] = np.nan
+    f1, f2 = np.nansum(map0), np.nansum(map1)
     print("Normalized flux variation:", np.abs(f1 - f2) / f1)
-    return image1_2, ps, kernel
+    return map1, uncmap1, ps1, kernel
 
 
 def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
@@ -133,47 +149,64 @@ def matching_PSF_2step(df, kernels, name, survey1, k2_survey1, k2_survey2):
         kernel2: <numpy array>
             Regridded kernel
     """
-    ps = df.xs(survey1, level=1).PS.values[0]
+    ps1 = df.xs(survey1, level=1).PS.values[0]
     ps2 = kernels.loc[k2_survey1, k2_survey2].PS
-    if reasonably_close(ps, ps2, 2.0):
+    if reasonably_close(ps1, ps2, 2.0):
         kernel2 = kernels.loc[k2_survey1, k2_survey2].KERNEL
     else:
         ps2 = kernels.loc[k2_survey1, k2_survey2].RGDPS
-        if reasonably_close(ps, ps2, 2.0):
+        if reasonably_close(ps1, ps2, 2.0):
             kernel2 = kernels.loc[k2_survey1, k2_survey2].RGDKERNEL
         else:
-            ps2 = ps
-            kernel2 = Kernel_regrid(kernels, ps, k2_survey1, k2_survey2)
+            ps2 = ps1
+            kernel2 = Kernel_regrid(kernels, ps1, k2_survey1, k2_survey2)
 
     bpa = df.loc[name, survey1].BPA
     bmaj = df.loc[name, survey1].BMAJ
     bmin = df.loc[name, survey1].BMIN
-    image1 = df.loc[name, survey1].MAP
+    map0 = df.loc[name, survey1].MAP
+    uncmap0 = df.loc[name, survey1].UNCMAP
     FWHM2 = kernels.loc[k2_survey1, k2_survey2].FWHM1
-    rm_bad_pts = np.full_like(image1, 1)
-    rm_bad_pts[np.isnan(image1)] = 0.0
+    rm_bad_pts = np.full_like(map0, 1)
+    rm_bad_pts[np.isnan(map0)] = 0.0
+    rm_bad_pts[np.isnan(uncmap0)] = 0.0
+
+    ratio = 1E18 if np.nanmax(uncmap0) > 1E18 else 1.0
+    uncmap0 /= ratio
 
     print("Convolving " + name + " " + survey1 + " map (1/2)...")
     tic = clock()
-    kernel1 = Gaussian_Kernel_C1(ps, bpa, bmaj, bmin, FWHM2)
-    image1_1 = convolve_fft(image1, kernel1, interpolate_nan=False)
+    kernel1 = Gaussian_Kernel_C1(ps1, bpa, bmaj, bmin, FWHM2)
+    map1 = convolve_fft(map0, kernel1, interpolate_nan=False)
     rm_bad_pts = convolve_fft(rm_bad_pts, kernel1, interpolate_nan=False)
-    image1_1[np.isnan(image1)] = np.nan
+    map1[np.isnan(map0)] = np.nan
+    uncmap1 = convolve_fft(uncmap0 ** 2, kernel1, interpolate_nan=False)
+    with np.errstate(invalid='ignore'):
+        uncmap1 = np.sqrt(uncmap1) * np.sqrt(bmaj * bmin) / FWHM2
+    uncmap1[np.isnan(uncmap0)] = np.nan
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     print("Convolving " + name + " " + survey1 + " map (2/2)...")
     tic = clock()
-    image1_2 = convolve_fft(image1_1, kernel2, interpolate_nan=False)
+    map2 = convolve_fft(map1, kernel2, interpolate_nan=False)
     rm_bad_pts = convolve_fft(rm_bad_pts, kernel2, interpolate_nan=False)
-    image1_2[np.isnan(image1)] = np.nan
-    image1_2[rm_bad_pts < threshold] = np.nan
+    map2[np.isnan(map0)] = np.nan
+    map2[rm_bad_pts < threshold] = np.nan
+    uncmap2 = convolve_fft(uncmap1 ** 2, kernel2, interpolate_nan=False)
+    with np.errstate(invalid='ignore'):
+        uncmap2 = np.sqrt(uncmap2) * FWHM2 / \
+            kernels.loc[k2_survey1, k2_survey2].FWHM2
+    uncmap2[np.isnan(uncmap0)] = np.nan
+    uncmap2[rm_bad_pts < threshold] = np.nan
+
+    uncmap2 *= ratio
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
-    image1[rm_bad_pts < threshold] = np.nan
-    image1_1[rm_bad_pts < threshold] = np.nan
-    f1, f2, f3 = np.nansum(image1), np.nansum(image1_1), np.nansum(image1_2)
+    map0[rm_bad_pts < threshold] = np.nan
+    map1[rm_bad_pts < threshold] = np.nan
+    f1, f2, f3 = np.nansum(map0), np.nansum(map1), np.nansum(map2)
     print("Normalized flux variation. first step: ", np.abs(f1 - f2) / f1)
     print("                           second step:", np.abs(f2 - f3) / f2)
     print("                           overall:    ", np.abs(f1 - f3) / f1)
-    return image1_2, ps2, kernel2
+    return map2, uncmap2, ps2, kernel2
 
 
 def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
@@ -191,8 +224,10 @@ def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
         image1_1: <numpy array>
             Regridded image
     """
-    value = df.loc[name, fine_survey].CVL_MAP
-    if len(value) == 1:
+    map0 = df.loc[name, fine_survey].CVL_MAP
+    uncmap0 = df.loc[name, fine_survey].CVL_UNC
+    assert map0.shape == uncmap0.shape
+    if len(map0) == 1:
         print(name + " " + fine_survey +
               " map has not been convolved. Please convolve first.")
         pass
@@ -210,11 +245,12 @@ def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
         xg, yg = w2.wcs_world2pix(xwg, ywg, 1)
         xng, yng = np.meshgrid(np.arange(naxis21), np.arange(naxis22))
 
-        assert np.size(value) == np.size(xg) == np.size(yg)
-        s = np.size(value)
-        value = value.reshape(s)
+        assert np.size(map0) == np.size(xg) == np.size(yg)
+        s = np.size(map0)
         points = np.concatenate((xg.reshape(s, 1), yg.reshape(s, 1)), axis=1)
-
-        image1_1 = griddata(points, value, (xng, yng), method=method)
+        map0 = map0.reshape(s)
+        uncmap0 = uncmap0.reshape(s)
+        map1 = griddata(points, map0, (xng, yng), method=method)
+        uncmap1 = griddata(points, uncmap0, (xng, yng), method=method)
         print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
-        return image1_1
+        return map1, uncmap1
