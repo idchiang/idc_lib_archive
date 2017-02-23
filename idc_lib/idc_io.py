@@ -509,7 +509,9 @@ class Surveys(object):
             heracles[np.isnan(heracles)] = 0
             total_gas = col2sur * H2HaHe * things + heracles
             total_gas_unc = col2sur * H2HaHe * things_unc + heracles_unc
+            kingfish = kingfish[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             kingfish_unc = \
+                kingfish_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             sed = sed[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
             sed_unc = sed_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1], :]
             diskmask = diskmask[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
