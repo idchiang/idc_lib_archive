@@ -226,6 +226,10 @@ def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
     """
     map0 = df.loc[name, fine_survey].CVL_MAP
     uncmap0 = df.loc[name, fine_survey].CVL_UNC
+
+    ratio = 1E18 if np.nanmax(uncmap0) > 1E18 else 1.0
+    uncmap0 /= ratio
+
     assert map0.shape == uncmap0.shape
     if len(map0) == 1:
         print(name + " " + fine_survey +
@@ -251,6 +255,7 @@ def WCS_congrid(df, name, fine_survey, course_survey, method='linear'):
         map0 = map0.reshape(s)
         uncmap0 = uncmap0.reshape(s)
         map1 = griddata(points, map0, (xng, yng), method=method)
-        uncmap1 = griddata(points, uncmap0, (xng, yng), method=method)
+        uncmap1 = griddata(points, uncmap0**2, (xng, yng), method=method)
+        uncmap1 = np.sqrt(uncmap1) / ratio
         print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
         return map1, uncmap1

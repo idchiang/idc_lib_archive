@@ -6,6 +6,7 @@ from h5py import File
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 import numpy as np
+import pandas as pd
 import astropy.units as u
 from astropy.constants import c, h, k_B
 import corner
@@ -614,88 +615,74 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
     plt.close("all")
 
 
-def vs_KINGFISH(name='NGC5457', targetSNR=10, cmap0='gist_heat', dr25=0.025):
+def vs_KINGFISH(name='NGC5457', targetSNR=10, dr25=0.025):
+    df = pd.DataFrame()
+
     with File('output/dust_data.h5', 'r') as hf:
         grp = hf[name]
-        
-        serr = np.array(grp.get('Dust_surface_density_err_dex'))  # in dex
-        binmap = np.array(grp.get('Binmap'))
-        total_gas = np.array(grp.get('Total_gas'))
-        radiusmap = np.array(grp.get('Radius_map'))  # kpc
+        with np.errstate(invalid='ignore'):
+            df['dust_fit'] = \
+                10**(np.array(grp.get('Dust_surface_density_log')).flatten())
+        serr = np.array(grp.get('Dust_surface_density_err_dex')).flatten()
         D = float(np.array(grp['Galaxy_distance']))
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
-        kf = np.array(grp.get('KINGFISH'))
+        df['dust_kf'] = np.array(grp.get('KINGFISH')).flatten() / 1E6
+        df['snr_kf'] = df['dust_kf'] / \
+            np.array(grp.get('KINGFISH_unc')).flatten() * 1E6
+        df['total_gas'] = np.array(grp.get('Total_gas')).flatten()
+        radius = np.array(grp.get('DP_RADIUS')).flatten()
+
     R25 = gal_data([name]).field('R25_DEG')[0]
     R25 *= (np.pi / 180.) * (D * 1E3)
-    binlist = np.unique(binmap)
+    df['r25'] = radius / R25
+    ##
+    with np.errstate(invalid='ignore', divide='ignore'):
+        df['snr_fit'] = 1 / (10**serr - 1.0)
+        df['dgr_fit'] = df['dust_fit'] / df['total_gas']
+        df['dgr_kf'] = df['dust_kf'] / df['total_gas']
+    del radius, serr, R25, D
 
     # Building a binned KINGFISH map for easier radial profile plotting
-    r_kfs = np.empty_like(binlist)
-    for i in range(len(binlist)):
-        mask = binmap == binlist[i]
-        r_kfs[i] = np.nanmean(kf[mask])
-
-    # Reducing data to 1-dim
-    logs_gas = np.log10(total_gas)
-
-    nanmask = np.isnan(serr)
-    serr[nanmask] = 2.
-    ssnr = 1 / (10**serr - 1)
-    ssnr[nanmask] = np.nan
-
-    r_r25 = np.array([radiusmap[binmap == temp][0] for temp in binlist]) / R25
-    r_logsg = np.array([logs_gas[binmap == temp][0] for temp in binlist])
-    r_ssnr = np.array([ssnr[binmap == temp][0] for temp in binlist])
-    r_area = np.array([np.sum(binmap == temp) for temp in binlist])
-
-    nanmask = np.isnan(r_logsg)
-    r_logsg[nanmask] = 0.
-    r_gmass = r_area * 10**r_logsg
-    r_gmass[nanmask] = np.nan
-
-    mask = ~np.isnan(r_r25 + r_logsg + r_area + r_kfs + r_ssnr)
-    r_r25, r_logsg, r_gmass, r_kfs, r_ssnr = \
-        r_r25[mask], r_logsg[mask], r_gmass[mask], r_kfs[mask], r_ssnr[mask]
+    mask = np.isnan(df['snr_kf']) + np.isnan(df['total_gas']) + \
+        np.isnan(df['snr_fit']) + np.isnan(df['r25'])
+    df = df[~mask]
+    assert np.sum(np.isnan(df.values)) == 0
 
     # Redistributing data to rings
-    nlayers = int(np.max(r_r25) // dr25)
-    masks = [(r_r25 < dr25)]
+    nlayers = int(np.max(df['r25']) // dr25)
+    masks = [(df['r25'] < dr25)]
     for i in range(1, nlayers - 1):
-        masks.append((r_r25 >= i * dr25) * (r_r25 < (i + 1) * dr25))
-    masks.append(r_r25 >= (nlayers - 1) * dr25)
+        masks.append((df['r25'] >= i * dr25) & (df['r25'] < (i + 1) * dr25))
+    masks.append(df['r25'] >= (nlayers - 1) * dr25)
     masks = np.array(masks)
-    tm = np.array([np.sum(r_gmass[masks[i]]) for i in range(len(masks))])
-    masks, tm = masks[tm.astype(bool)], tm[tm.astype(bool)]
-    nlayers = len(masks)
-    r_ri, ssnr_ri, kfs_ri = np.empty(nlayers), np.empty(nlayers), \
-        np.empty(nlayers)
+    r_ri, log_dgr_fit_ri, log_dgr_kf_ri, snr_fit_ri, snr_kf_ri = \
+        np.empty(nlayers), np.empty(nlayers), np.empty(nlayers), \
+        np.empty(nlayers), np.empty(nlayers)
     for i in range(nlayers):
         mask = masks[i]
-        r_ri[i] = np.sum(r_r25[mask] * r_gmass[mask]) / tm[i]
-        ssnr_ri[i] = np.sum(r_ssnr[mask] * r_gmass[mask]) / tm[i]
-        kfs_ri[i] = np.sum(r_kfs[mask] * r_gmass[mask]) / tm[i]
+        masses = df['total_gas'][mask] / np.nansum(df['total_gas'][mask])
+        r_ri[i] = np.sum(df['r25'][mask] * masses)
+        with np.errstate(invalid='ignore'):
+            log_dgr_fit_ri[i] = np.log10(np.sum(df['dgr_fit'][mask] * masses))
+            log_dgr_kf_ri[i] = np.log10(np.sum(df['dgr_kf'][mask] * masses))
+        snr_fit_ri[i] = np.sum(df['snr_fit'][mask] * masses)
+        snr_kf_ri[i] = np.sum(df['snr_kf'][mask] * masses)
 
     # Total gas & DGR
-    fig, ax = plt.subplots(2, 2, figsize=(20, 20))
-    cax = np.empty_like(ax)
+    fig, ax = plt.subplots(2, 1, figsize=(10, 14))
     fig.suptitle(name, size=28, y=0.995)
-    cax[0, 0] = ax[0, 0].imshow(kfs, origin='lower', cmap=cmap0,
-                                vmax=targetSNR)
-    ax[0, 0].set_title('Fitting SNR (KINGFISH)', size=20)
-    fig.colorbar(cax[0, 0], ax=ax[0, 0])
-    ax[0, 1].plot(r_ri, kfs_ri)
-    ax[0, 1].set_ylabel('Average SNR')
-    ax[0, 1].set_xlabel('r25')
-    cax[1, 0] = ax[1, 0].imshow(ssnr, origin='lower', cmap=cmap0,
-                                vmax=targetSNR)
-    ax[1, 0].set_title('Fitting SNR (This work)', size=20)
-    fig.colorbar(cax[1, 0], ax=ax[1, 0])
-    ax[1, 1].plot(r_ri, ssnr_ri)
-    ax[1, 1].set_ylabel('Average SNR')
-    ax[1, 1].set_xlabel('r25')
+    ax[0].plot(r_ri, log_dgr_fit_ri, label='This work')
+    ax[0].plot(r_ri, log_dgr_kf_ri, label='KINGFISH')
+    ax[0].set_ylabel('Dust-to-gas ratio (log scale)', size=16)
+    ax[0].legend(fontsize=16)
+
+    ax[1].plot(r_ri, snr_fit_ri, label='This work')
+    ax[1].plot(r_ri, snr_kf_ri, label='KINGFISH')
+    ax[1].set_ylabel('Mean fitting SNR', size=16)
+    ax[1].set_xlabel('r25', size=16)
+    ax[1].legend(fontsize=16)
     fig.tight_layout()
-    fig.subplots_adjust(wspace=0.25)
     fig.savefig('output/' + name + '_vs_KINGFISH.png')
     fig.clf()
 
