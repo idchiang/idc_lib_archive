@@ -45,3 +45,5 @@ from idc_math import *
 from idc_plot import *
 from idc_regrid import *
 from idc_voronoi import *
+from idc_datacleaning import *
+from test import *

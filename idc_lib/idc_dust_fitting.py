@@ -111,6 +111,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp = hf[name]
         total_gas = np.array(grp['Total_gas'])
         sed = np.array(grp['Herschel_SED'])
+        sed_unc = np.array(grp['Herschel_SED_unc'])
         bkgerr = np.array(grp['Herschel_bkgerr'])
         diskmask = np.array(grp['Diskmask'])
         glx_ctr = np.array(grp['Galaxy_center'])
@@ -125,6 +126,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     perr = popt.copy()
     binmap = np.full_like(sed[:, :, 0], np.nan, dtype=int)
     bkgmap = np.full_like(sed, np.nan)
+    uncmap = np.full_like(sed, np.nan)
     radiusmap = np.full_like(sed[:, :, 0], np.nan)
     # Voronoi binning
     # d --> diskmasked, len() = sum(diskmask);
@@ -245,12 +247,18 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     Ts = np.arange(min_T, max_T, T_step)
     logsigmas, Ts = np.meshgrid(logsigmas, Ts)
     models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
+    """
+    Applying RSRFs to generate fake-observed models
+    """
     for i in range(len(wl)):
         models[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
-
+    """
+    Start fitting
+    """
     print("Start fitting", name, "dust surface density...")
     tic = clock()
     p = 0
+    pdfs = pd.DataFrame()
     # results = [] # array for saving all the raw chains
     for i in xrange(len(binNumlist)):
         if (i + 1) / len(binNumlist) > p:
@@ -261,12 +269,16 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         radiusmap[bin_] = np.sum(dp_radius[bin_] * total_gas[bin_]) / \
             np.sum(total_gas[bin_])   # total_gas weighted radius
         bkgerr_avg = bkgerr / np.sqrt(np.sum(bin_))
+        unc_avg = np.sqrt(np.mean(sed_unc[bin_]**2, axis=0))
+        assert len(unc_avg) == 5
+        assert not np.isnan(unc_avg)
         bkgmap[bin_] = bkgerr_avg
+        uncmap[bin_] = unc_avg
         total_gas[bin_] = np.nanmean(total_gas[bin_])
         sed_avg[i] = np.mean(sed[bin_], axis=0)
         sed[bin_] = sed_avg[i]
         calerr2 = calerr_matrix2 * sed_avg[i]**2
-        inv_sigma2 = 1 / (bkgerr_avg**2 + calerr2)
+        inv_sigma2 = 1 / (bkgerr_avg**2 + calerr2 + unc_avg**2)
         """ Grid fitting """
         lnprobs = -0.5 * (np.sum((sed_avg[i] - models)**2 * inv_sigma2,
                                  axis=2))
@@ -279,21 +291,21 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         #     plot_single_bin(name, binNumlist[i], samples, sed_avg[i],
         #                     inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
         """ Continue saving """
+        pr = np.exp(lnprobs)
         mask = lnprobs > np.max(lnprobs) - 6
-        lnprobs_cp, logsigmas_cp, Ts_cp = \
-            lnprobs[mask], logsigmas[mask], Ts[mask]
-        pr = np.exp(lnprobs_cp)
+        logsigmas_cp, Ts_cp, pr_cp = \
+            logsigmas[mask], Ts[mask], pr[mask]
         #
         ids = np.argsort(logsigmas_cp)
         logsigmas_cp = logsigmas_cp[ids]
-        prs = pr[ids]
+        prs = pr_cp[ids]
         csp = np.cumsum(prs)[:-1]
         csp = np.append(0, csp / csp[-1])
         sss = np.interp([0.16, 0.5, 0.84], csp, logsigmas_cp).tolist()
         #
         idT = np.argsort(Ts_cp)
         Ts_cp = Ts_cp[idT]
-        prT = pr[idT]
+        prT = pr_cp[idT]
         csp = np.cumsum(prT)[:-1]
         csp = np.append(0, csp / csp[-1])
         sst = np.interp([0.16, 0.5, 0.84], csp, Ts_cp).tolist()
@@ -301,7 +313,13 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         popt[bin_] = np.array([sss[1], sst[1]])
         perr[bin_] = np.array([max(sss[2]-sss[1], sss[1]-sss[0]),
                                max(sst[2]-sst[1], sst[1]-sst[0])])
+        """ New: saving PDF """
+        pdf = np.sum(pr, axis=0)
+        pdf /= np.sum(pdf)
+        pdfs = pdfs.append([pdf])
 
+    pdfs = pdfs.set_index(binNumlist)
+    pdfs.to_csv('output/' + name + '_pdf.csv', index=True)
     print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
     # Saving to h5 file
     # Total_gas and dust in M_sun/pc**2
@@ -316,6 +334,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp = hf.create_group(name)
         grp.create_dataset('Total_gas', data=total_gas)
         grp.create_dataset('Herschel_SED', data=sed)
+        grp.create_dataset('Herschel_SED_binned_unc', data=uncmap)
         grp.create_dataset('Herschel_binned_bkg', data=bkgmap)
         grp.create_dataset('Dust_surface_density_log', data=popt[:, :, 0])
         # sopt in log scale (search sss)
@@ -330,6 +349,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp.create_dataset('PA', data=PA)
         grp.create_dataset('PS', data=PS)
         grp.create_dataset('Radius_map', data=radiusmap)  # kpc
+        grp.create_dataset('logsigmas', data=logsigmas)
     print("Datasets saved.")
 
 
@@ -437,13 +457,18 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
         binmap = np.array(grp.get('Binmap'))
         radiusmap = np.array(grp.get('Radius_map'))  # kpc
         D = float(np.array(grp['Galaxy_distance']))
+        logsigmas = np.array(grp.get('logsigmas'))
         # readme = np.array(grp.get('readme'))
 
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
         things = np.array(grp['THINGS']) * col2sur * H2HaHe
         heracles = np.array(grp['HERACLES'])
+        total_gas_ub = np.array(grp['Total_gas'])
         diskmask = np.array(grp['Diskmask'])
+        dp_radius = np.array(grp['DP_RADIUS'])
+
+    pdfs = pd.read_csv('output/' + name + '_pdf.csv')
 
     nanmask = np.isnan(total_gas) + np.isnan(things) + np.isnan(heracles)
     total_gas[nanmask], things[nanmask], heracles[nanmask] = -1., -1., -1.
@@ -644,8 +669,8 @@ def vs_KINGFISH(name='NGC5457', targetSNR=10, dr25=0.025):
     del radius, serr, R25, D
 
     # Building a binned KINGFISH map for easier radial profile plotting
-    mask = np.isnan(df['snr_kf']) + np.isnan(df['total_gas']) + \
-        np.isnan(df['snr_fit']) + np.isnan(df['r25'])
+    mask = np.isnan(df['snr_kf']) | np.isnan(df['total_gas']) | \
+        np.isnan(df['snr_fit']) | np.isnan(df['r25'])
     df = df[~mask]
     assert np.sum(np.isnan(df.values)) == 0
 
@@ -674,11 +699,14 @@ def vs_KINGFISH(name='NGC5457', targetSNR=10, dr25=0.025):
     fig.suptitle(name, size=28, y=0.995)
     ax[0].plot(r_ri, log_dgr_fit_ri, label='This work')
     ax[0].plot(r_ri, log_dgr_kf_ri, label='KINGFISH')
+    ax[0].set_xlim([np.min(r_ri), np.max(r_ri)])
     ax[0].set_ylabel('Dust-to-gas ratio (log scale)', size=16)
     ax[0].legend(fontsize=16)
 
     ax[1].plot(r_ri, snr_fit_ri, label='This work')
     ax[1].plot(r_ri, snr_kf_ri, label='KINGFISH')
+    ax[1].plot(r_ri, [3]*len(r_ri), 'k')
+    ax[1].set_xlim([np.min(r_ri), np.max(r_ri)])
     ax[1].set_ylabel('Mean fitting SNR', size=16)
     ax[1].set_xlabel('r25', size=16)
     ax[1].legend(fontsize=16)

@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 from idc_lib import Surveys, read_dust_file
 from idc_lib import fit_dust_density as fdd
-from idc_lib import vs_KINGFISH
+# from idc_lib import 
 range = xrange
 # execfile('IDC_astro.py')
 """
@@ -74,12 +74,3 @@ def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
     for sample in samples:
         read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
 
-
-def misc(test=0, samples=M101, targetSNR=10, dr25=0.025):
-    if test:
-        samples = SST
-    elif type(samples) == str:
-        samples = [samples]
-
-    for sample in samples:
-        vs_KINGFISH(name=sample, targetSNR=targetSNR, dr25=dr25)
