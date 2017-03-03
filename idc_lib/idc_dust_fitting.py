@@ -246,12 +246,73 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     logsigmas = np.arange(min_logsigma, max_logsigma, logsigma_step)
     Ts = np.arange(min_T, max_T, T_step)
     logsigmas, Ts = np.meshgrid(logsigmas, Ts)
-    models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
-    """
-    Applying RSRFs to generate fake-observed models
-    """
-    for i in range(len(wl)):
-        models[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
+    try:
+        with File('output/rsrf_models.h5', 'r') as hf:
+            models = np.array(hf['models'])
+    except IOError:
+        models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
+        """
+        Applying RSRFs to generate fake-observed models
+        """
+        print("Constructing control model...")
+        models0 = np.zeros([Ts.shape[0], Ts.shape[1], len(wl)])
+        for i in range(len(wl)):
+            models0[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
+        ##
+        print("Constructing PACS RSRF model...")
+        tic = clock()
+        pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
+        pacs_wl = pacs_rsrf['Wavelength'].values
+        pacs_nu = (c / pacs_wl / u.um).to(u.Hz)
+        pacs_100 = pacs_rsrf['PACS_100'].values
+        pacs_160 = pacs_rsrf['PACS_160'].values
+        pacs_dnu = pacs_rsrf['dnu'].values[0]
+        del pacs_rsrf
+        #
+        pacs_models = np.zeros([Ts.shape[0], Ts.shape[1], len(pacs_wl)])
+        for i in range(len(pacs_wl)):
+            pacs_models[:, :, i] = _model(pacs_wl[i], 10**logsigmas, Ts,
+                                          pacs_nu[i])
+        del pacs_nu
+        models[:, :, 0] = np.sum(pacs_models * pacs_dnu * pacs_100,
+                                 axis=2) / np.sum(pacs_dnu * pacs_100 *
+                                                  pacs_wl / wl[0])
+        models[:, :, 1] = np.sum(pacs_models * pacs_dnu * pacs_160,
+                                 axis=2) / np.sum(pacs_dnu * pacs_160 *
+                                                  pacs_wl / wl[1])
+        #
+        del pacs_wl, pacs_100, pacs_160, pacs_dnu, pacs_models
+        ##
+        print("Constructing SPIRE RSRF model...")
+        spire_rsrf = pd.read_csv("data/RSRF/SPIRE_RSRF.csv")
+        spire_wl = spire_rsrf['Wavelength'].values
+        spire_nu = (c / spire_wl / u.um).to(u.Hz)
+        spire_250 = spire_rsrf['SPIRE_250'].values
+        spire_350 = spire_rsrf['SPIRE_350'].values
+        spire_500 = spire_rsrf['SPIRE_500'].values
+        spire_dnu = spire_rsrf['dnu'].values[0]
+        del spire_rsrf
+        #
+        spire_models = np.zeros([Ts.shape[0], Ts.shape[1], len(spire_wl)])
+        for i in range(len(spire_wl)):
+            spire_models[:, :, i] = _model(spire_wl[i], 10**logsigmas, Ts,
+                                           spire_nu[i])
+        del spire_nu
+        models[:, :, 2] = np.sum(spire_models * spire_dnu * spire_250,
+                                 axis=2) / np.sum(spire_dnu * spire_250 *
+                                                  spire_wl / wl[2])
+        models[:, :, 3] = np.sum(spire_models * spire_dnu * spire_350,
+                                 axis=2) / np.sum(spire_dnu * spire_350 *
+                                                  spire_wl / wl[3])
+        models[:, :, 4] = np.sum(spire_models * spire_dnu * spire_500,
+                                 axis=2) / np.sum(spire_dnu * spire_500 *
+                                                  spire_wl / wl[4])
+        #
+        del spire_wl, spire_250, spire_350, spire_500, spire_dnu
+        del spire_models
+        print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+        with File('output/rsrf_models.h5', 'a') as hf:
+            hf.create_dataset('models', data=models)
     """
     Start fitting
     """
@@ -270,8 +331,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
             np.sum(total_gas[bin_])   # total_gas weighted radius
         bkgerr_avg = bkgerr / np.sqrt(np.sum(bin_))
         unc_avg = np.sqrt(np.mean(sed_unc[bin_]**2, axis=0))
-        assert len(unc_avg) == 5
-        assert not np.isnan(unc_avg)
+        unc_avg[np.isnan(unc_avg)] = 0
         bkgmap[bin_] = bkgerr_avg
         uncmap[bin_] = unc_avg
         total_gas[bin_] = np.nanmean(total_gas[bin_])
@@ -292,7 +352,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         #                     inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
         """ Continue saving """
         pr = np.exp(lnprobs)
-        mask = lnprobs > np.max(lnprobs) - 6
+        mask = lnprobs > np.nanmax(lnprobs) - 6
         logsigmas_cp, Ts_cp, pr_cp = \
             logsigmas[mask], Ts[mask], pr[mask]
         #

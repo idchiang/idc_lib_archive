@@ -2,7 +2,7 @@ from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 from idc_lib import Surveys, read_dust_file
 from idc_lib import fit_dust_density as fdd
-# from idc_lib import 
+from idc_lib import Gordon_RSRF
 range = xrange
 # execfile('IDC_astro.py')
 """
@@ -74,3 +74,9 @@ def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
     for sample in samples:
         read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
 
+
+def misc():
+    Gordon_RSRF()
+    fitting()
+
+misc()

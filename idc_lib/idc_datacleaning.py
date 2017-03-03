@@ -2,7 +2,11 @@ from __future__ import absolute_import, division, print_function, \
                        unicode_literals
 import numpy as np
 import pandas as pd
+from astropy.constants import c
+import astropy.units as u
 range = xrange
+
+c = c.to(u.um/u.s).value
 
 
 def Gordon_RSRF():
@@ -42,21 +46,13 @@ def Gordon_RSRF():
             else:
                 PACS_RSRF = PACS_RSRF.merge(data, how='inner', on='Wavelength')
     """
-    Create d\lambda column
+    Create d\nu column
     """
-    Wavelength_plus_one = SPIRE_RSRF['Wavelength'].values
-    Wavelength_plus_one = np.append(Wavelength_plus_one,
-                                    (2 * Wavelength_plus_one[-1] -
-                                     Wavelength_plus_one[-2]))
-    Wavelength_plus_one = np.delete(Wavelength_plus_one, 0)
-    SPIRE_RSRF['dlambda'] = Wavelength_plus_one - SPIRE_RSRF['Wavelength']
+    nu = c / SPIRE_RSRF['Wavelength'].values
+    SPIRE_RSRF['dnu'] = np.mean(nu[1:] - nu[:-1])
     #
-    Wavelength_plus_one = PACS_RSRF['Wavelength'].values
-    Wavelength_plus_one = np.append(Wavelength_plus_one,
-                                    (2 * Wavelength_plus_one[-1] -
-                                     Wavelength_plus_one[-2]))
-    Wavelength_plus_one = np.delete(Wavelength_plus_one, 0)
-    PACS_RSRF['dlambda'] = Wavelength_plus_one - PACS_RSRF['Wavelength']
+    nu = c / PACS_RSRF['Wavelength'].values
+    PACS_RSRF['dnu'] = np.mean(nu[1:] - nu[:-1])
     """
     Delete empty rows
     """
