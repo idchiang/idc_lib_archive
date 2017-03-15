@@ -78,5 +78,3 @@ def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
 def misc():
     Gordon_RSRF()
     fitting()
-
-misc()

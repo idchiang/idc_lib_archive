@@ -409,7 +409,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp.create_dataset('PA', data=PA)
         grp.create_dataset('PS', data=PS)
         grp.create_dataset('Radius_map', data=radiusmap)  # kpc
-        grp.create_dataset('logsigmas', data=logsigmas)
+        grp.create_dataset('logsigmas', data=logsigmas[0])
     print("Datasets saved.")
 
 
@@ -501,7 +501,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     """
 
 
-def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
+def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
                    dr25=0.025):
     # name = 'NGC3198'
     # bins = 10
@@ -524,11 +524,11 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
         grp = hf[name]
         things = np.array(grp['THINGS']) * col2sur * H2HaHe
         heracles = np.array(grp['HERACLES'])
-        total_gas_ub = np.array(grp['Total_gas'])
+        # total_gas_ub = np.array(grp['Total_gas'])
         diskmask = np.array(grp['Diskmask'])
-        dp_radius = np.array(grp['DP_RADIUS'])
+        # dp_radius = np.array(grp['DP_RADIUS'])
 
-    pdfs = pd.read_csv('output/' + name + '_pdf.csv')
+    plt.ioff()
 
     nanmask = np.isnan(total_gas) + np.isnan(things) + np.isnan(heracles)
     total_gas[nanmask], things[nanmask], heracles[nanmask] = -1., -1., -1.
@@ -549,7 +549,6 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
                 np.nan, np.nan, np.nan, np.nan, np.nan
             total_gas[mask], things[mask], heracles[mask] = \
                 np.nan, np.nan, np.nan
-
     logs_gas = np.log10(total_gas)
     logs_HI = np.log10(things)
     logs_H2 = np.log10(heracles)
@@ -604,99 +603,95 @@ def read_dust_file(name='NGC3198', bins=30, off=-22.5, cmap0='gist_heat',
     fig.savefig('output/' + name + '_DGR_Sd_GAS.png')
     fig.clf()
 
-    # Reducing data to 1-dim
-    r_r25 = np.array([radiusmap[binmap == temp][0] for temp in binlist]) / R25
-    r_logdgr = np.array([logdgr[binmap == temp][0] for temp in binlist])
-    r_logsg = np.array([logs_gas[binmap == temp][0] for temp in binlist])
-    r_logHI = np.array([logs_HI[binmap == temp][0] for temp in binlist])
-    r_logH2 = np.array([logs_H2[binmap == temp][0] for temp in binlist])
-    r_area = np.array([np.sum(binmap == temp) for temp in binlist])
+    # hist2d
+    if len(logsigmas.shape) == 2:
+        logsigmas = logsigmas[0]
+    sigmas = 10**logsigmas
+    #
+    pdfs = pd.read_csv('output/' + name + '_pdf.csv', index_col=0)
+    pdfs.index = pdfs.index.astype(int)
+    #
+    radiusmap /= R25
+    #
+    r, s, w = [], [], []
+    for i in pdfs.index:
+        bin_ = binmap == i
+        temp_g = total_gas[bin_][0]
+        temp_r = radiusmap[bin_][0]
+        mask2 = (pdfs.iloc[i] > pdfs.iloc[i].max() / 1000).values
+        temp_s = sigmas[mask2]
+        temp_p = pdfs.iloc[i][mask2]
+        temp_p /= np.sum(temp_p)
+        for j in range(len(temp_s)):
+            r.append(temp_r)
+            s.append(temp_s[j] / temp_g)
+            w.append(temp_g * temp_p[j])
+        if i % (len(pdfs.index) // 10) == 0:
+            print('Current bin:' + str(i) + ' of ' + str(len(pdfs.index)))
+    r, s, w = np.array(r), np.array(s), np.array(w)
+    nanmask = np.isnan(r) + np.isnan(s) + np.isnan(w)
+    r, s, w = r[~nanmask], s[~nanmask], w[~nanmask]
+    rbins = np.linspace(np.min(r), np.max(r), bins)
+    sbins = np.logspace(np.min(np.log10(s)), np.max(np.log10(s)), bins)
+    counts, _, _ = np.histogram2d(r, s, bins=(rbins, sbins), weights=w)
+    counts2, _, _ = np.histogram2d(r, s, bins=(rbins, sbins))
+    counts = counts.T
+    counts2 = counts2.T
+    for i in range(len(counts)):
+        if np.sum(counts2[:, i]) > 0:
+            counts[:, i] /= np.sum(counts[:, i])
+            counts2[:, i] /= np.sum(counts2[:, i])
+    sbins = (sbins[:-1] + sbins[1:]) / 2
+    rbins = (rbins[:-1] + rbins[1:]) / 2
+    dgr_median = []
+    # dgr_avg = []
+    zeromask = [True] * len(counts[:])
+    #
+    for i in range(len(counts[:])):
+        if np.sum(counts[:, i]) > 0:
+            mask = counts[:, i] > (np.max(counts[:, i]) / 1000)
+            smax = np.max(counts[mask, i])
+            smin = np.min(counts[mask, i])
+            csp = np.cumsum(counts[:, i])[:-1]
+            csp = np.append(0, csp / csp[-1])
+            sss = np.interp([0.16, 0.5, 0.84], csp, sbins)
+            fig, ax = plt.subplots(2, 1)
+            ax[0].semilogx([sss[0]] * len(counts[:, i]), counts[:, i],
+                           label='16')
+            ax[0].semilogx([sss[1]] * len(counts[:, i]), counts[:, i],
+                           label='50')
+            ax[0].semilogx([sss[2]] * len(counts[:, i]), counts[:, i],
+                           label='84')
+            # dgr_avg.append(np.sum(counts[:, i] * sbins))
+            # ax[0].semilogx([dgr_avg[-1]] * len(counts[:, i]),
+            #                counts[:, i], label='Exp')
+            ax[0].semilogx(sbins, counts[:, i], label='PDF')
+            ax[0].set_xlim([smin, smax])
+            ax[0].legend()
+            dgr_median.append(sss[1])
+            ax[1].semilogx(sbins, counts2[:, i], label='Unweighted PDF')
+            ax[1].set_xlim([smin, smax])
+            ax[1].legend()
+            fig.savefig('output/' + name + '_' + str(i) + '_' +
+                        str(rbins[i]) + '.png')
+            plt.close('all')
+        else:
+            zeromask[i] = False
+    zeromask = np.array(zeromask)
+    #
+    cmap = 'Reds'
+    c_median = 'c'
+    #
+    plt.figure()
+    plt.pcolormesh(rbins, sbins, counts, norm=LogNorm(), cmap=cmap)
+    plt.yscale('log')
+    plt.colorbar()
+    plt.plot(rbins[zeromask], dgr_median, c_median, label='Median')
+    plt.xlabel(r'Radius ($R_{25}$)', size=16)
+    plt.ylabel(r'DGR', size=16)
+    plt.title('Gas mass weighted DGR PDF', size=20)
+    plt.savefig('output/' + name + 'hist2d_plt_pcolormesh.png')
 
-    nanmask = np.isnan(r_logsg)
-    r_logsg[nanmask] = 0.
-    r_gmass = r_area * 10**r_logsg
-    r_gmass[nanmask] = np.nan
-    mask = ~np.isnan(r_r25 + r_logsg + r_area + r_gmass)
-    r_r25, r_logdgr, r_logsg, r_area, r_gmass, r_logHI, r_logH2 = \
-        r_r25[mask], r_logdgr[mask], r_logsg[mask], r_area[mask], \
-        r_gmass[mask], r_logHI[mask], r_logH2[mask]
-
-    # Creating mass / ring mass weighting
-    dr = np.max(r_r25) / bins
-    masks = [(r_r25 < dr)]
-    for i in range(1, bins - 1):
-        masks.append((r_r25 >= i * dr) * (r_r25 < (i + 1) * dr))
-    masks.append(r_r25 >= (bins - 1) * dr)
-    r_gmassdtm = np.empty_like(r_gmass)
-    for i in range(bins):
-        r_gmassdtm[masks[i]] = r_gmass[masks[i]] / np.sum(r_gmass[masks[i]])
-
-    # DGR profile
-    fig, ax = plt.subplots(1, 2, figsize=(21, 7))
-    cax = np.empty_like(ax)
-    # fig.set_size_inches(15, 12)
-    cax[0] = ax[0].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmass,
-                          cmap='Greys', norm=LogNorm())
-    ax[0].set_xlabel(r'Radius ($R_{25}$)', size=16)
-    ax[0].set_ylabel(r'DGR (log)', size=16)
-    ax[0].set_title('Gas mass weighted', size=20)
-    fig.colorbar(cax[0][3], ax=ax[0])
-
-    cax[1] = ax[1].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmassdtm,
-                          cmap='Greys', norm=LogNorm())
-    ax[1].set_xlabel(r'Radius ($R_{25}$)', size=16)
-    ax[1].set_ylabel(r'DGR (log)', size=16)
-    ax[1].set_title('Ring-normalized gas mass weighted', size=20)
-    fig.colorbar(cax[1][3], ax=ax[1])
-
-    fig.subplots_adjust(wspace=0.25)
-    for i in range(2):
-        ax[i].set_xlim([0., np.max(r_r25)+0.1])
-        ax[i].set_ylim([np.min(r_logdgr)-0.1, np.max(r_logdgr)+0.1])
-    fig.savefig('output/' + name + '_DGR_hist2d.png')
-    fig.clf()
-
-    # Redistributing data to rings
-    nlayers = int(np.max(r_r25) // dr25)
-    masks = [(r_r25 < dr25)]
-    for i in range(1, nlayers - 1):
-        masks.append((r_r25 >= i * dr25) * (r_r25 < (i + 1) * dr25))
-    masks.append(r_r25 >= (nlayers - 1) * dr25)
-    masks = np.array(masks)
-    tm = np.array([np.sum(r_gmass[masks[i]]) for i in range(len(masks))])
-    masks, tm = masks[tm.astype(bool)], tm[tm.astype(bool)]
-    nlayers = len(masks)
-    r_ri, dgr_ri, HI_ri, H2_ri = np.empty(nlayers), np.empty(nlayers), \
-        np.empty(nlayers), np.empty(nlayers)
-    for i in range(nlayers):
-        mask = masks[i]
-        r_ri[i] = np.sum(r_r25[mask] * r_gmass[mask]) / tm[i]
-        dgr_ri[i] = np.log10(np.sum(10**r_logdgr[mask] * r_gmass[mask]) /
-                             tm[i])
-        with np.errstate(invalid='ignore'):
-            HI_ri[i] = np.log10(np.sum(10**r_logHI[mask] * r_gmass[mask]) /
-                                tm[i])
-        H2_ri[i] = np.log10(np.sum(10**r_logH2[mask] * r_gmass[mask]) / tm[i])
-
-    fig, ax = plt.subplots(2, 1, figsize=(10, 15))
-    # fig.set_size_inches(15, 12)
-    # Note: it's the ring-mass normalized one here
-    cax = ax[0].hist2d(r_r25, r_logdgr, bins=bins, weights=r_gmassdtm,
-                       cmap='Greys', norm=LogNorm())
-    # fig.colorbar(cax[3], ax=ax[0])
-    ax[0].plot(r_ri, dgr_ri, lw=5.)
-    ax[0].set_ylabel(r'DGR (log)', size=16)
-    ax[0].set_title(name + 'Gas mass weighted profile', size=24, y=1.05)
-
-    ax[1].plot(r_ri, HI_ri, label="HI", lw=5.)
-    ax[1].plot(r_ri, H2_ri, label="H2", lw=5.)
-    ax[1].set_ylabel(r'Surface density (log)', size=16)
-    ax[1].set_xlabel(r'r25', size=16)
-    ax[1].legend(loc=3, fontsize=16)
-    for i in range(2):
-        ax[i].set_xlim([0., np.max(r_r25)+0.1])
-    fig.savefig('output/' + name + '_DGR_profile.png')
-    fig.clf()
     plt.close("all")
 
 
