@@ -1,6 +1,3 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
-range = xrange
 import numpy as np
 from time import clock
 import matplotlib.pyplot as plt

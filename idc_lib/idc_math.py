@@ -1,7 +1,4 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 import numpy as np
-range = xrange
 
 
 FWHM2sigma = 0.5 / np.sqrt(2*np.log(2))
