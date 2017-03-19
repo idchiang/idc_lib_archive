@@ -1,8 +1,5 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 import matplotlib.pyplot as plt
 # from matplotlib.colors import LogNorm
-range = xrange
 
 
 def imshowid(image):

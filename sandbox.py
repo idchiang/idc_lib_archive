@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -8,7 +6,7 @@ from matplotlib.colors import LogNorm
 from h5py import File
 from astropy.constants import c, h, k_B
 from idc_lib import gal_data
-range = xrange
+
 
 """
 My target: 1323
@@ -159,7 +157,7 @@ def sb(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat', dr25=0.025):
             mask = (pdfs.iloc[bin_] > pdfs.iloc[bin_].max() / 1000).values
             smin = logsigmas[mask].min()
             smax = logsigmas[mask].max()
-            ax.plot(logsigmas, pdfs.iloc[bin_], 'PDF')
+            ax.plot(logsigmas, pdfs.iloc[bin_], label='PDF')
             ax.plot([sss[0]]*len(pdfs.iloc[bin_]), pdfs.iloc[bin_], label='16')
             ax.plot([sss[1]]*len(pdfs.iloc[bin_]), pdfs.iloc[bin_], label='50')
             ax.plot([sss[2]]*len(pdfs.iloc[bin_]), pdfs.iloc[bin_], label='84')

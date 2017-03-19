@@ -1,11 +1,9 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 import numpy as np
 from scipy.interpolate import interp2d, griddata
 from astropy.convolution import convolve_fft
 from time import clock
 from .idc_math import reasonably_close, Gaussian_Kernel_C1
-range = xrange
+
 
 # If rm_bad_pts becomes less than threshold after convolution, remove.
 threshold = 0.9

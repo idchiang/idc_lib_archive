@@ -1,10 +1,6 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 from idc_lib import Surveys, read_dust_file
 from idc_lib import fit_dust_density as fdd
 from idc_lib import Gordon_RSRF
-range = xrange
-# execfile('IDC_astro.py')
 """
 Ref:
 

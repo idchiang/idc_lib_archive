@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 import os
 import numpy as np
 # import matplotlib.pyplot as plt
@@ -12,7 +10,7 @@ from h5py import File
 from time import clock
 # from .plot_idchiang import imshowid
 from . import idc_regrid as ric
-range = xrange
+
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 H2HaHe = 1.36
 

@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 # import emcee
 import numpy as np
 import pandas as pd
@@ -7,7 +5,7 @@ from time import clock
 import matplotlib.pyplot as plt
 import astropy.units as u
 from astropy.constants import c, h, k_B
-range = xrange
+
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])

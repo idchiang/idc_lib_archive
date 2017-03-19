@@ -1,5 +1,3 @@
-from __future__ import absolute_import, division, print_function, \
-                       unicode_literals
 from time import clock
 # import emcee
 from h5py import File
@@ -11,7 +9,7 @@ import astropy.units as u
 from astropy.constants import c, h, k_B
 import corner
 from . import idc_voronoi, gal_data
-range = xrange
+
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
@@ -238,10 +236,10 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     print("Generating grid...")
     """ Grid parameters """
     logsigma_step = 0.005
-    min_logsigma = -5.
-    max_logsigma = 3.
+    min_logsigma = -4.
+    max_logsigma = 1.
     T_step = 0.05
-    min_T = T_step
+    min_T = 5.
     max_T = 50.
     logsigmas = np.arange(min_logsigma, max_logsigma, logsigma_step)
     Ts = np.arange(min_T, max_T, T_step)
@@ -342,6 +340,13 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         """ Grid fitting """
         lnprobs = -0.5 * (np.sum((sed_avg[i] - models)**2 * inv_sigma2,
                                  axis=2))
+
+        """ Find the (s, t) that gives Maximum likelihood """
+        temp = lnprobs.argmax()
+        tempa, tempb = temp // lnprobs.shape[1], temp % lnprobs.shape[1]
+        s_ML = logsigmas[tempa, tempb]
+        t_ML = Ts[tempa, tempb]
+
         """ Show map """
         # plt.figure()
         # imshowid(np.log10(-lnprobs))
@@ -370,6 +375,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         csp = np.append(0, csp / csp[-1])
         sst = np.interp([0.16, 0.5, 0.84], csp, Ts_cp).tolist()
         """ Saving to results """
+        sss[1], sst[1] = s_ML, t_ML
         popt[bin_] = np.array([sss[1], sst[1]])
         perr[bin_] = np.array([max(sss[2]-sss[1], sss[1]-sss[0]),
                                max(sst[2]-sst[1], sst[1]-sst[0])])
@@ -631,13 +637,13 @@ def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
     r, s, w = np.array(r), np.array(s), np.array(w)
     nanmask = np.isnan(r) + np.isnan(s) + np.isnan(w)
     r, s, w = r[~nanmask], s[~nanmask], w[~nanmask]
-    rbins = np.linspace(np.min(r), np.max(r), bins)
-    sbins = np.logspace(np.min(np.log10(s)), np.max(np.log10(s)), bins)
+    rbins = np.linspace(np.min(r), np.max(r), 100)
+    sbins = np.logspace(np.min(np.log10(s)), np.max(np.log10(s)), 250)
     counts, _, _ = np.histogram2d(r, s, bins=(rbins, sbins), weights=w)
     counts2, _, _ = np.histogram2d(r, s, bins=(rbins, sbins))
     counts = counts.T
     counts2 = counts2.T
-    for i in range(len(counts)):
+    for i in range(counts.shape[1]):
         if np.sum(counts2[:, i]) > 0:
             counts[:, i] /= np.sum(counts[:, i])
             counts2[:, i] /= np.sum(counts2[:, i])
@@ -645,9 +651,9 @@ def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
     rbins = (rbins[:-1] + rbins[1:]) / 2
     dgr_median = []
     # dgr_avg = []
-    zeromask = [True] * len(counts[:])
+    zeromask = np.full(counts.shape[1], True, dtype=bool)
     #
-    for i in range(len(counts[:])):
+    for i in range(counts.shape[1]):
         if np.sum(counts[:, i]) > 0:
             mask = counts[:, i] > (np.max(counts[:, i]) / 1000)
             smax = np.max(counts[mask, i])
@@ -677,16 +683,16 @@ def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
             plt.close('all')
         else:
             zeromask[i] = False
-    zeromask = np.array(zeromask)
     #
     cmap = 'Reds'
     c_median = 'c'
     #
     plt.figure()
-    plt.pcolormesh(rbins, sbins, counts, norm=LogNorm(), cmap=cmap)
+    plt.pcolormesh(rbins, sbins, counts, norm=LogNorm(), cmap=cmap, vmin=1E-3)
     plt.yscale('log')
     plt.colorbar()
     plt.plot(rbins[zeromask], dgr_median, c_median, label='Median')
+    plt.ylim([1E-5, 1E-1])
     plt.xlabel(r'Radius ($R_{25}$)', size=16)
     plt.ylabel(r'DGR', size=16)
     plt.title('Gas mass weighted DGR PDF', size=20)
