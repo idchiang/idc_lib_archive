@@ -421,7 +421,7 @@ class Surveys(object):
         # Now, value inside dp_coords is (x, y)
         # :0 --> x, RA --> the one needed to be divided by cos(incl)
         # :1 --> y, Dec
-        for i in xrange(l[0]):
+        for i in range(l[0]):
             dp_coords[i] = w.wcs_pix2world(dp_coords[i], 1) * np.pi / 180
         dp_coords[:, :, 0] = 0.5 * (dp_coords[:, :, 0] - xcm) * \
             (np.cos(dp_coords[:, :, 1]) + np.cos(ycm))
@@ -450,9 +450,9 @@ class Surveys(object):
             # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
             axissum = [0] * 2
             lc = np.zeros([2, 2], dtype=int)
-            for i in xrange(2):
+            for i in range(2):
                 axissum[i] = np.nansum(things, axis=i, dtype=bool)
-                for j in xrange(len(axissum[i])):
+                for j in range(len(axissum[i])):
                     if axissum[i][j]:
                         lc[i-1, 0] = j
                         break
@@ -480,22 +480,24 @@ class Surveys(object):
 
             # Using the variance of non-galaxy region as uncertainty
             nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
-            bkgerr = np.full(5, np.nan)
+            bkgcov = None
             THINGS_Limit = 1.0E17
-            while(np.sum(np.isnan(bkgerr))):
+            while(bkgcov is None):
                 THINGS_Limit *= 10
-                temp = []
                 with np.errstate(invalid='ignore'):
                     glxmask = (things > THINGS_Limit)
                 diskmask = glxmask * nanmask
-                for i in range(5):
-                    inv_glxmask2 = ~(np.isnan(sed[:, :, i]) + glxmask)
-                    temp.append(sed[inv_glxmask2, i])
-                    temp[i] = temp[i][np.abs(temp[i]) < (3 * np.std(temp[i]))]
-                    bkgerr[i] = np.std(temp[i])
+                # Covariance matrix begins
+                bkgmask = (~glxmask) * nanmask
+                N = np.sum(bkgmask)
+                if N > 100:
+                    print("Available bkg pixels:", N)
+                    bkgcov = np.cov(sed[bkgmask].T)
+                # Covariance matrix ends
 
             for i in range(5):
-                sed[:, :, i] -= np.median(temp[i])
+                temp = sed[:, :, i][bkgmask]
+                sed[:, :, i] -= np.median(temp)
 
             # Cut the images and masks!!!
             things = things[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
@@ -537,7 +539,8 @@ class Surveys(object):
                 grp.create_dataset('KINGFISH_unc', data=kingfish_unc)
                 grp.create_dataset('Herschel_SED', data=sed)
                 grp.create_dataset('Herschel_SED_unc', data=sed_unc)
-                grp.create_dataset('Herschel_bkgerr', data=bkgerr)
+                grp.create_dataset('Herschel_bkgcov', data=bkgcov)
+                grp.create_dataset('Herschel_bkg_N', data=N)
                 grp.create_dataset('Diskmask', data=diskmask)
                 grp.create_dataset('Galaxy_center', data=glx_ctr)
                 grp.create_dataset('Galaxy_distance',

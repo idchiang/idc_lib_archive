@@ -1,6 +1,7 @@
-from idc_lib import Surveys, read_dust_file
-from idc_lib import fit_dust_density as fdd
-from idc_lib import Gordon_RSRF
+from idc_lib.idc_io import Surveys
+from idc_lib.idc_dust_fitting import read_dust_file as rdf
+from idc_lib.idc_dust_fitting import fit_dust_density as fdd
+from idc_lib.idc_datacleaning import Gordon_RSRF
 """
 Ref:
 
@@ -49,7 +50,7 @@ def generator(test=0, samples=M101):
     cmaps.save_data(samples)
 
 
-def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5):
+def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=45):
     if test:
         samples = SSST
     elif type(samples) == str:
@@ -57,10 +58,10 @@ def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5):
 
     for sample in samples:
         fdd(sample, nwalkers=nwalkers, nsteps=nsteps)
-        read_dust_file(sample, bins=bins, off=off)
+        rdf(sample, bins=bins, off=off)
 
 
-def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
+def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=45,
          cmap0='gist_heat', dr25=0.025):
     if test:
         samples = SSST
@@ -68,9 +69,4 @@ def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
         samples = [samples]
 
     for sample in samples:
-        read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
-
-
-def misc():
-    Gordon_RSRF()
-    fitting()
+        rdf(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
