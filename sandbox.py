@@ -5,7 +5,6 @@ import astropy.units as u
 from matplotlib.colors import LogNorm
 from h5py import File
 from astropy.constants import c, h, k_B
-from idc_lib import gal_data
 
 
 """

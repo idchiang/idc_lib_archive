@@ -421,7 +421,7 @@ class Surveys(object):
         # Now, value inside dp_coords is (x, y)
         # :0 --> x, RA --> the one needed to be divided by cos(incl)
         # :1 --> y, Dec
-        for i in xrange(l[0]):
+        for i in range(l[0]):
             dp_coords[i] = w.wcs_pix2world(dp_coords[i], 1) * np.pi / 180
         dp_coords[:, :, 0] = 0.5 * (dp_coords[:, :, 0] - xcm) * \
             (np.cos(dp_coords[:, :, 1]) + np.cos(ycm))
@@ -450,9 +450,9 @@ class Surveys(object):
             # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
             axissum = [0] * 2
             lc = np.zeros([2, 2], dtype=int)
-            for i in xrange(2):
+            for i in range(2):
                 axissum[i] = np.nansum(things, axis=i, dtype=bool)
-                for j in xrange(len(axissum[i])):
+                for j in range(len(axissum[i])):
                     if axissum[i][j]:
                         lc[i-1, 0] = j
                         break
@@ -488,6 +488,13 @@ class Surveys(object):
                 with np.errstate(invalid='ignore'):
                     glxmask = (things > THINGS_Limit)
                 diskmask = glxmask * nanmask
+                # Covariance matrix test begins
+                bkgmask = (~glxmask) * nanmask
+                print("Available bkg pixels:", np.sum(bkgmask))
+                bkgcov = np.cov(sed[bkgmask])
+                print(bkgcov)
+                return 0
+                # Covariance matrix test ends
                 for i in range(5):
                     inv_glxmask2 = ~(np.isnan(sed[:, :, i]) + glxmask)
                     temp.append(sed[inv_glxmask2, i])

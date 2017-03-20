@@ -38,12 +38,3 @@ FUTURE TO DO:
     1. Normalization of the regrid map if already in "density"
     2. add_kernel: checking centered
 """
-from gal_data import *
-from idc_dust_fitting import *
-from idc_io import *
-from idc_math import *
-from idc_plot import *
-from idc_regrid import *
-from idc_voronoi import *
-from idc_datacleaning import *
-from test import *

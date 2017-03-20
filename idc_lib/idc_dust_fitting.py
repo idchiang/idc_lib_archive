@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import astropy.units as u
 from astropy.constants import c, h, k_B
-import corner
+# import corner
 from . import idc_voronoi, gal_data
 
 
@@ -319,7 +319,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     p = 0
     pdfs = pd.DataFrame()
     # results = [] # array for saving all the raw chains
-    for i in xrange(len(binNumlist)):
+    for i in range(len(binNumlist)):
         if (i + 1) / len(binNumlist) > p:
             print('Step', (i + 1), '/', len(binNumlist))
             p += 0.1
@@ -418,7 +418,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp.create_dataset('logsigmas', data=logsigmas[0])
     print("Datasets saved.")
 
-
+"""
 # Code for plotting the results
 def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
                     lnprobs, Ts, logsigmas):
@@ -426,8 +426,8 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     nwalkers, nsteps, ndim = samples.shape
     lnpr = np.zeros([nwalkers, nsteps, 1])
 
-    for w in xrange(nwalkers):
-        for n in xrange(nsteps):
+    for w in range(nwalkers):
+        for n in range(nsteps):
             lnpr[w, n, 0] = _lnprob(samples[w, n], wl, sed_avg, inv_sigma2)
     samples = np.concatenate([samples, lnpr], axis=2)
 
@@ -436,7 +436,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     ax[0, 0].set_title('Surface density')
     ax[0, 1].set_title('Temperature')
     ax[0, 2].set_title('ln(Probability)')
-    for w in xrange(nwalkers):
+    for w in range(nwalkers):
         ax[0, 0].plot(samples[w, :, 0], c='b')
         ax[0, 1].plot(samples[w, :, 1], c='b')
         ax[0, 2].plot(samples[w, :, 2], c='b')
@@ -480,7 +480,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     plt.clf()
 
     plt.close("all")
-    """
+
     # Plotting data versus model
     n = 50
     alpha = 0.1
@@ -504,7 +504,8 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
     plt.xlabel(r'Wavelength ($\mu$m)')
     plt.ylabel('SED')
     plt.savefig('output/NGC 3198 ['+str(yt)+','+str(xt)+']_datamodel.png')
-    """
+
+"""
 
 
 def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',

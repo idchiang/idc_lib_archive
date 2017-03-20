@@ -1,6 +1,7 @@
-from idc_lib import Surveys, read_dust_file
-from idc_lib import fit_dust_density as fdd
-from idc_lib import Gordon_RSRF
+from idc_lib.idc_io import Surveys
+from idc_lib.idc_dust_fitting import read_dust_file as rdf
+from idc_lib.idc_dust_fitting import fit_dust_density as fdd
+from idc_lib.idc_datacleaning import Gordon_RSRF
 """
 Ref:
 
@@ -57,7 +58,7 @@ def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5):
 
     for sample in samples:
         fdd(sample, nwalkers=nwalkers, nsteps=nsteps)
-        read_dust_file(sample, bins=bins, off=off)
+        rdf(sample, bins=bins, off=off)
 
 
 def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
@@ -68,9 +69,18 @@ def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
         samples = [samples]
 
     for sample in samples:
-        read_dust_file(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
+        rdf(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
 
 
-def misc():
-    Gordon_RSRF()
-    fitting()
+def misc(test=0, samples=M101):
+    if test:
+        samples = SST
+    elif type(samples) == str:
+        samples = [samples]
+
+    cmaps = Surveys(samples, all_surveys)
+    cmaps.add_kernel(all_kernels, 'SPIRE_500')
+    cmaps.matching_PSF_1step(samples, MP1, 'SPIRE_500')
+    cmaps.matching_PSF_2step(samples, MP2, 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
+    cmaps.save_data(samples)
