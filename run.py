@@ -50,7 +50,7 @@ def generator(test=0, samples=M101):
     cmaps.save_data(samples)
 
 
-def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5):
+def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=45):
     if test:
         samples = SSST
     elif type(samples) == str:
@@ -61,7 +61,7 @@ def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5):
         rdf(sample, bins=bins, off=off)
 
 
-def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
+def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=45,
          cmap0='gist_heat', dr25=0.025):
     if test:
         samples = SSST
@@ -70,17 +70,3 @@ def read(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=-22.5,
 
     for sample in samples:
         rdf(sample, bins=bins, off=off, cmap0=cmap0, dr25=dr25)
-
-
-def misc(test=0, samples=M101):
-    if test:
-        samples = SST
-    elif type(samples) == str:
-        samples = [samples]
-
-    cmaps = Surveys(samples, all_surveys)
-    cmaps.add_kernel(all_kernels, 'SPIRE_500')
-    cmaps.matching_PSF_1step(samples, MP1, 'SPIRE_500')
-    cmaps.matching_PSF_2step(samples, MP2, 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
-    cmaps.save_data(samples)

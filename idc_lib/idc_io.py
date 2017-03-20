@@ -480,29 +480,24 @@ class Surveys(object):
 
             # Using the variance of non-galaxy region as uncertainty
             nanmask = ~np.sum(np.isnan(sed), axis=2, dtype=bool)
-            bkgerr = np.full(5, np.nan)
+            bkgcov = None
             THINGS_Limit = 1.0E17
-            while(np.sum(np.isnan(bkgerr))):
+            while(bkgcov is None):
                 THINGS_Limit *= 10
-                temp = []
                 with np.errstate(invalid='ignore'):
                     glxmask = (things > THINGS_Limit)
                 diskmask = glxmask * nanmask
-                # Covariance matrix test begins
+                # Covariance matrix begins
                 bkgmask = (~glxmask) * nanmask
-                print("Available bkg pixels:", np.sum(bkgmask))
-                bkgcov = np.cov(sed[bkgmask])
-                print(bkgcov)
-                return 0
-                # Covariance matrix test ends
-                for i in range(5):
-                    inv_glxmask2 = ~(np.isnan(sed[:, :, i]) + glxmask)
-                    temp.append(sed[inv_glxmask2, i])
-                    temp[i] = temp[i][np.abs(temp[i]) < (3 * np.std(temp[i]))]
-                    bkgerr[i] = np.std(temp[i])
+                N = np.sum(bkgmask)
+                if N > 100:
+                    print("Available bkg pixels:", N)
+                    bkgcov = np.cov(sed[bkgmask].T)
+                # Covariance matrix ends
 
             for i in range(5):
-                sed[:, :, i] -= np.median(temp[i])
+                temp = sed[:, :, i][bkgmask]
+                sed[:, :, i] -= np.median(temp)
 
             # Cut the images and masks!!!
             things = things[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
@@ -544,7 +539,8 @@ class Surveys(object):
                 grp.create_dataset('KINGFISH_unc', data=kingfish_unc)
                 grp.create_dataset('Herschel_SED', data=sed)
                 grp.create_dataset('Herschel_SED_unc', data=sed_unc)
-                grp.create_dataset('Herschel_bkgerr', data=bkgerr)
+                grp.create_dataset('Herschel_bkgcov', data=bkgcov)
+                grp.create_dataset('Herschel_bkg_N', data=N)
                 grp.create_dataset('Diskmask', data=diskmask)
                 grp.create_dataset('Galaxy_center', data=glx_ctr)
                 grp.create_dataset('Galaxy_distance',

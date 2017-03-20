@@ -33,7 +33,11 @@ fwhm_sp500 = FWHM['SPIRE_500'] * u.arcsec.to(u.rad)  # in rad
 
 # Calibration error of PACS_100, PACS_160, SPIRE_250, SPIRE_350, SPIRE_500
 # For extended source
-calerr_matrix2 = np.array([0.10, 0.10, 0.08, 0.08, 0.08]) ** 2
+cali_mat2 = np.array([[0.1**2 + 0.02**2, 0.1**2, 0, 0, 0],
+                      [0.1**2, 0.1**2 + 0.02**2, 0, 0, 0],
+                      [0, 0, 0.08**2 + 0.015**2, 0.08**2, 0.08**2],
+                      [0, 0, 0.08**2, 0.08**2 + 0.015**2, 0.08**2],
+                      [0, 0, 0.08**2, 0.08**2, 0.08**2 + 0.015**2]])
 
 # Number of fitting parameters
 ndim = 2
@@ -57,19 +61,18 @@ def _sigma0(wl, SL, T):
     return SL * (wl / 160)**2 / const / kappa160 / \
         _B(T * u.K, (c / wl / u.um).to(u.Hz))
 
-
-def _lnlike(theta, x, y, inv_sigma2):
-    """Probability function for fitting"""
-    sigma, T = theta
-    model = _model(x, sigma, T)
+"""
+def _lnlike(sigma, T, wl, obs, inv_sigma2, freq=nu):
+    # Probability function for fitting
+    model = _model(wl, sigma, T, freq)
     if np.sum(np.isinf(inv_sigma2)):
         return -np.inf
     else:
-        return -0.5 * (np.sum((y - model)**2 * inv_sigma2))
+        return -0.5 * (np.sum((obs - model)**2 * inv_sigma2))
 
 
 def _lnprior(theta):
-    """Probability function for fitting"""
+    # Probability function for fitting
     sigma, T = theta
     if np.log10(sigma) < 3 and 0 < T < 50:
         return 0
@@ -77,11 +80,12 @@ def _lnprior(theta):
 
 
 def _lnprob(theta, x, y, inv_sigma2):
-    """Probability function for fitting"""
+    # Probability function for fitting
     lp = _lnprior(theta)
     if not np.isfinite(lp):
         return -np.inf
     return lp + _lnlike(theta, x, y, inv_sigma2)
+"""
 
 
 def fit_dust_density(name, nwalkers=20, nsteps=150):
@@ -110,7 +114,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         total_gas = np.array(grp['Total_gas'])
         sed = np.array(grp['Herschel_SED'])
         sed_unc = np.array(grp['Herschel_SED_unc'])
-        bkgerr = np.array(grp['Herschel_bkgerr'])
+        bkgcov = np.array(grp['Herschel_bkgcov'])
         diskmask = np.array(grp['Diskmask'])
         glx_ctr = np.array(grp['Galaxy_center'])
         D = float(np.array(grp['Galaxy_distance']))
@@ -122,16 +126,16 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
 
     popt = np.full_like(sed[:, :, :ndim], np.nan)
     perr = popt.copy()
+    cov_n1_map = np.full([sed.shape[0], sed.shape[1], 5, 5], np.nan)
     binmap = np.full_like(sed[:, :, 0], np.nan, dtype=int)
-    bkgmap = np.full_like(sed, np.nan)
-    uncmap = np.full_like(sed, np.nan)
     radiusmap = np.full_like(sed[:, :, 0], np.nan)
     # Voronoi binning
     # d --> diskmasked, len() = sum(diskmask);
     # b --> binned, len() = number of binned area
     print("Start binning " + name + "...")
     tic = clock()
-    signal_d = np.min(np.abs(sed[diskmask] / bkgerr), axis=1)
+    noise4snr = np.array([sed_unc[:, :, i] + bkgcov[i, i] for i in range(5)])
+    signal_d = np.min(np.abs(sed[diskmask] / noise4snr), axis=1)
     noise_d = np.ones(signal_d.shape)
     x_d, y_d = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
     x_d, y_d = x_d[diskmask], y_d[diskmask]
@@ -146,7 +150,6 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
             grp.create_dataset('Total_gas', data=total_gas)
             grp.create_dataset('Herschel_SED', data=sed)
             """SED not binned yet"""
-            grp.create_dataset('Herschel_binned_bkg', data=ept)
             grp.create_dataset('Dust_surface_density', data=ept)
             grp.create_dataset('Dust_surface_density_err', data=ept)
             grp.create_dataset('Dust_temperature', data=ept)
@@ -325,25 +328,33 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
             p += 0.1
         """ Binning everything """
         bin_ = (binmap == binNumlist[i])
+        # total_gas weighted radius / total gas
         radiusmap[bin_] = np.sum(dp_radius[bin_] * total_gas[bin_]) / \
-            np.sum(total_gas[bin_])   # total_gas weighted radius
-        bkgerr_avg = bkgerr / np.sqrt(np.sum(bin_))
-        unc_avg = np.sqrt(np.mean(sed_unc[bin_]**2, axis=0))
-        unc_avg[np.isnan(unc_avg)] = 0
-        bkgmap[bin_] = bkgerr_avg
-        uncmap[bin_] = unc_avg
+            np.sum(total_gas[bin_])
         total_gas[bin_] = np.nanmean(total_gas[bin_])
+        # mean sed
         sed_avg[i] = np.mean(sed[bin_], axis=0)
         sed[bin_] = sed_avg[i]
-        calerr2 = calerr_matrix2 * sed_avg[i]**2
-        inv_sigma2 = 1 / (bkgerr_avg**2 + calerr2 + unc_avg**2)
+        sed_vec = sed_avg[i].reshape(1, 5)
+        # bkg covariance matrix
+        bkgcov_avg = bkgcov / np.sum(bin_)
+        # uncertainty diagonal matrix
+        unc2_avg = np.mean(sed_unc[bin_]**2, axis=0)
+        unc2_avg[np.isnan(unc2_avg)] = 0
+        unc2cov_avg = np.identity(5) * unc2_avg
+        # calibration error covariance matrix
+        calcov = sed_vec.T * cali_mat2 * sed_vec
+        # Finally everything for covariance matrix is here...
+        cov_n1 = np.linalg.inv(bkgcov_avg + unc2cov_avg + calcov)
+        cov_n1_map[bin_] = cov_n1
         """ Grid fitting """
-        lnprobs = -0.5 * (np.sum((sed_avg[i] - models)**2 * inv_sigma2,
-                                 axis=2))
-
+        diff = sed_vec - models
+        chi2 = np.array([[np.dot(np.dot(diff.T[:, k, j], cov_n1), diff[j, k])
+                          for k in range(diff.shape[1])]
+                         for j in range(diff.shape[0])])
         """ Find the (s, t) that gives Maximum likelihood """
-        temp = lnprobs.argmax()
-        tempa, tempb = temp // lnprobs.shape[1], temp % lnprobs.shape[1]
+        temp = chi2.argmin()
+        tempa, tempb = temp // chi2.shape[1], temp % chi2.shape[1]
         s_ML = logsigmas[tempa, tempb]
         t_ML = Ts[tempa, tempb]
 
@@ -356,8 +367,8 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         #     plot_single_bin(name, binNumlist[i], samples, sed_avg[i],
         #                     inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
         """ Continue saving """
-        pr = np.exp(lnprobs)
-        mask = lnprobs > np.nanmax(lnprobs) - 6
+        pr = np.exp(-0.5 * chi2)
+        mask = chi2 < np.nanin(chi2) + 12
         logsigmas_cp, Ts_cp, pr_cp = \
             logsigmas[mask], Ts[mask], pr[mask]
         #
@@ -400,14 +411,13 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp = hf.create_group(name)
         grp.create_dataset('Total_gas', data=total_gas)
         grp.create_dataset('Herschel_SED', data=sed)
-        grp.create_dataset('Herschel_SED_binned_unc', data=uncmap)
-        grp.create_dataset('Herschel_binned_bkg', data=bkgmap)
         grp.create_dataset('Dust_surface_density_log', data=popt[:, :, 0])
         # sopt in log scale (search sss)
         grp.create_dataset('Dust_surface_density_err_dex', data=perr[:, :, 0])
         # serr in dex
         grp.create_dataset('Dust_temperature', data=popt[:, :, 1])
         grp.create_dataset('Dust_temperature_err', data=perr[:, :, 1])
+        grp.create_dataset('Herschel_covariance_matrix', data=cov_n1_map)
         grp.create_dataset('Binmap', data=binmap)
         grp.create_dataset('Galaxy_distance', data=D)
         grp.create_dataset('Galaxy_center', data=glx_ctr)
@@ -508,7 +518,7 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
 """
 
 
-def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
+def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
                    dr25=0.025):
     # name = 'NGC3198'
     # bins = 10
@@ -520,7 +530,7 @@ def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
         terr = np.array(grp.get('Dust_temperature_err'))
         total_gas = np.array(grp.get('Total_gas'))
         sed = np.array(grp.get('Herschel_SED'))
-        bkgerr = np.array(grp.get('Herschel_binned_bkg'))
+        cov_n1_map = np.array(grp.get('Herschel_covariance_matrix'))
         binmap = np.array(grp.get('Binmap'))
         radiusmap = np.array(grp.get('Radius_map'))  # kpc
         D = float(np.array(grp['Galaxy_distance']))
@@ -543,16 +553,16 @@ def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
     things[np.less_equal(things, 0)] = np.nan
     heracles[np.less_equal(heracles, 0)] = np.nan
 
-    lnprob = np.full_like(logs_d, np.nan)
+    chi2 = np.full_like(logs_d, np.nan)
     binlist = np.unique(binmap[diskmask])
     for bin_ in binlist:
         mask = binmap == bin_
-        calerr2 = calerr_matrix2 * sed[mask][0]**2
-        inv_sigma2 = 1 / (bkgerr[mask][0]**2 + calerr2)
-        lnprob[mask] = _lnprob([10**logs_d[mask][0], topt[mask][0]], wl,
-                               sed[mask][0], inv_sigma2)
-        if lnprob[mask][0] < off or serr[mask][0] > 1.:
-            logs_d[mask], topt[mask], serr[mask], terr[mask], lnprob[mask] = \
+        cov_n1 = cov_n1_map[mask][0]
+        model = _model(wl, 10**logs_d[mask][0], topt[mask][0], nu)
+        diff = (sed[mask][0] - model).reshape(1, 5)
+        chi2[mask] = np.dot(np.dot(diff.T, cov_n1), diff)
+        if chi2[mask][0] > off or serr[mask][0] > 1.:
+            logs_d[mask], topt[mask], serr[mask], terr[mask], chi2[mask] = \
                 np.nan, np.nan, np.nan, np.nan, np.nan
             total_gas[mask], things[mask], heracles[mask] = \
                 np.nan, np.nan, np.nan
@@ -600,7 +610,7 @@ def read_dust_file(name='NGC5457', bins=30, off=-22.5, cmap0='gist_heat',
     ax[1, 0].set_title(r'$\Sigma_{d}$ $(\log_{10}(M_\odot pc^{-2}))$', size=20)
     cax[1, 1] = ax[1, 1].imshow(serr, origin='lower', cmap=cmap0)
     ax[1, 1].set_title(r'$\Sigma_d$ error (dex)', size=20)
-    cax[1, 2] = ax[1, 2].imshow(-lnprob, origin='lower', cmap=cmap0)
+    cax[1, 2] = ax[1, 2].imshow(chi2, origin='lower', cmap=cmap0)
     ax[1, 2].set_title(r'$\chi^2$', size=20)
     for i in range(2):
         for j in range(3):
