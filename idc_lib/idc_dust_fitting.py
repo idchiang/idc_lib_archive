@@ -56,12 +56,15 @@ def _model(wl, sigma, T, freq=nu):
     return const * kappa160 * (160.0 / wl)**2 * sigma * _B(T * u.K, freq)
 
 
+"""
+# Reminders of MCMC fitting
+
 def _sigma0(wl, SL, T):
-    """Generate the inital guess of dust surface density"""
+    # Generate the inital guess of dust surface density
     return SL * (wl / 160)**2 / const / kappa160 / \
         _B(T * u.K, (c / wl / u.um).to(u.Hz))
 
-"""
+
 def _lnlike(sigma, T, wl, obs, inv_sigma2, freq=nu):
     # Probability function for fitting
     model = _model(wl, sigma, T, freq)
@@ -134,7 +137,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     # b --> binned, len() = number of binned area
     print("Start binning " + name + "...")
     tic = clock()
-    noise4snr = np.array([sed_unc[:, :, i] + bkgcov[i, i] for i in range(5)])
+    noise4snr = np.array([np.sqrt(bkgcov[i, i]) for i in range(5)])
     signal_d = np.min(np.abs(sed[diskmask] / noise4snr), axis=1)
     noise_d = np.ones(signal_d.shape)
     x_d, y_d = np.meshgrid(range(sed.shape[1]), range(sed.shape[0]))
@@ -253,13 +256,12 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     except IOError:
         models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
         """
-        Applying RSRFs to generate fake-observed models
-        """
         print("Constructing control model...")
         models0 = np.zeros([Ts.shape[0], Ts.shape[1], len(wl)])
         for i in range(len(wl)):
             models0[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
-        ##
+        """
+        # Applying RSRFs to generate fake-observed models
         print("Constructing PACS RSRF model...")
         tic = clock()
         pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
@@ -324,7 +326,8 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     # results = [] # array for saving all the raw chains
     for i in range(len(binNumlist)):
         if (i + 1) / len(binNumlist) > p:
-            print('Step', (i + 1), '/', len(binNumlist))
+            print('Step', (i + 1), '/', str(len(binNumlist)) + '.',
+                  "Elapsed time:", round(clock()-tic, 3), "s.")
             p += 0.1
         """ Binning everything """
         bin_ = (binmap == binNumlist[i])
@@ -348,10 +351,13 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         cov_n1 = np.linalg.inv(bkgcov_avg + unc2cov_avg + calcov)
         cov_n1_map[bin_] = cov_n1
         """ Grid fitting """
-        diff = sed_vec - models
-        chi2 = np.array([[np.dot(np.dot(diff.T[:, k, j], cov_n1), diff[j, k])
-                          for k in range(diff.shape[1])]
-                         for j in range(diff.shape[0])])
+        # sed_avg[i].shape = (5)
+        # models.shape = (len(logsigmas), len(Ts), 5)
+        diff = models - sed_avg[i]
+        temp_matrix = np.empty_like(diff)
+        for i in range(5):
+            temp_matrix[:, :, i] = np.sum(diff * cov_n1[:, i], axis=2)
+        chi2 = np.sum(temp_matrix * diff, axis=2)
         """ Find the (s, t) that gives Maximum likelihood """
         temp = chi2.argmin()
         tempa, tempb = temp // chi2.shape[1], temp % chi2.shape[1]
@@ -368,7 +374,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         #                     inv_sigma2, sopt, topt, lnprobs, Ts, logsigmas)
         """ Continue saving """
         pr = np.exp(-0.5 * chi2)
-        mask = chi2 < np.nanin(chi2) + 12
+        mask = chi2 < np.nanmin(chi2) + 12
         logsigmas_cp, Ts_cp, pr_cp = \
             logsigmas[mask], Ts[mask], pr[mask]
         #
@@ -518,23 +524,23 @@ def plot_single_bin(name, binnum, samples, sed_avg, inv_sigma2, sopt, topt,
 """
 
 
-def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
+def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
                    dr25=0.025):
     # name = 'NGC3198'
     # bins = 10
     with File('output/dust_data.h5', 'r') as hf:
         grp = hf[name]
-        logs_d = np.array(grp.get('Dust_surface_density_log'))  # in log
-        serr = np.array(grp.get('Dust_surface_density_err_dex'))  # in dex
-        topt = np.array(grp.get('Dust_temperature'))
-        terr = np.array(grp.get('Dust_temperature_err'))
-        total_gas = np.array(grp.get('Total_gas'))
-        sed = np.array(grp.get('Herschel_SED'))
-        cov_n1_map = np.array(grp.get('Herschel_covariance_matrix'))
-        binmap = np.array(grp.get('Binmap'))
-        radiusmap = np.array(grp.get('Radius_map'))  # kpc
+        logs_d = np.array(grp['Dust_surface_density_log'])  # in log
+        serr = np.array(grp['Dust_surface_density_err_dex'])  # in dex
+        topt = np.array(grp['Dust_temperature'])
+        terr = np.array(grp['Dust_temperature_err'])
+        total_gas = np.array(grp['Total_gas'])
+        sed = np.array(grp['Herschel_SED'])
+        cov_n1_map = np.array(grp['Herschel_covariance_matrix'])
+        binmap = np.array(grp['Binmap'])
+        radiusmap = np.array(grp['Radius_map'])  # kpc
         D = float(np.array(grp['Galaxy_distance']))
-        logsigmas = np.array(grp.get('logsigmas'))
+        logsigmas = np.array(grp['logsigmas'])
         # readme = np.array(grp.get('readme'))
 
     with File('output/RGD_data.h5', 'r') as hf:
@@ -543,7 +549,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
         heracles = np.array(grp['HERACLES'])
         # total_gas_ub = np.array(grp['Total_gas'])
         diskmask = np.array(grp['Diskmask'])
-        # dp_radius = np.array(grp['DP_RADIUS'])
+        dp_radius = np.array(grp['DP_RADIUS'])
 
     plt.ioff()
 
@@ -559,20 +565,20 @@ def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
         mask = binmap == bin_
         cov_n1 = cov_n1_map[mask][0]
         model = _model(wl, 10**logs_d[mask][0], topt[mask][0], nu)
-        diff = (sed[mask][0] - model).reshape(1, 5)
-        chi2[mask] = np.dot(np.dot(diff.T, cov_n1), diff)
+        diff = (sed[mask][0] - model).reshape(5, 1)
+        chi2[mask] = np.dot(np.dot(diff.T, cov_n1), diff)[0, 0]
         if chi2[mask][0] > off or serr[mask][0] > 1.:
             logs_d[mask], topt[mask], serr[mask], terr[mask], chi2[mask] = \
                 np.nan, np.nan, np.nan, np.nan, np.nan
             total_gas[mask], things[mask], heracles[mask] = \
                 np.nan, np.nan, np.nan
     logs_gas = np.log10(total_gas)
-    logs_HI = np.log10(things)
+    # logs_HI = np.log10(things)
     logs_H2 = np.log10(heracles)
     logdgr = logs_d - logs_gas
 
     # D in Mpc. Need r25 in kpc
-    R25 = gal_data([name]).field('R25_DEG')[0]
+    R25 = gal_data.gal_data([name]).field('R25_DEG')[0]
     R25 *= (np.pi / 180.) * (D * 1E3)
 
     # Fitting results
@@ -658,6 +664,21 @@ def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
         if np.sum(counts2[:, i]) > 0:
             counts[:, i] /= np.sum(counts[:, i])
             counts2[:, i] /= np.sum(counts2[:, i])
+    """ Generates H2 & HI radial profile """
+    mask = ~np.isnan(things)
+    r_HI = dp_radius[mask]
+    sd_HI = things[mask]
+    total_sd, _ = np.histogram(r_HI, rbins, weights=sd_HI)
+    count_HI, _ = np.histogram(r_HI, rbins)
+    mean_HI = np.log10(total_sd / count_HI)
+    #
+    mask = ~np.isnan(heracles)
+    r_H2 = dp_radius[mask]
+    sd_H2 = heracles[mask]
+    total_sd, _ = np.histogram(r_H2, rbins, weights=sd_H2)
+    count_H2, _ = np.histogram(r_H2, rbins)
+    mean_H2 = np.log10(total_sd / count_H2)
+    #
     sbins = (sbins[:-1] + sbins[1:]) / 2
     rbins = (rbins[:-1] + rbins[1:]) / 2
     dgr_median = []
@@ -672,6 +693,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
             csp = np.cumsum(counts[:, i])[:-1]
             csp = np.append(0, csp / csp[-1])
             sss = np.interp([0.16, 0.5, 0.84], csp, sbins)
+            """
             fig, ax = plt.subplots(2, 1)
             ax[0].semilogx([sss[0]] * len(counts[:, i]), counts[:, i],
                            label='16')
@@ -685,20 +707,23 @@ def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
             ax[0].semilogx(sbins, counts[:, i], label='PDF')
             ax[0].set_xlim([smin, smax])
             ax[0].legend()
+            """
             dgr_median.append(sss[1])
+            """
             ax[1].semilogx(sbins, counts2[:, i], label='Unweighted PDF')
             ax[1].set_xlim([smin, smax])
             ax[1].legend()
             fig.savefig('output/' + name + '_' + str(i) + '_' +
                         str(rbins[i]) + '.png')
             plt.close('all')
+            """
         else:
             zeromask[i] = False
     #
     cmap = 'Reds'
     c_median = 'c'
     #
-    plt.figure()
+    plt.figure(figsize=(9, 6))
     plt.pcolormesh(rbins, sbins, counts, norm=LogNorm(), cmap=cmap, vmin=1E-3)
     plt.yscale('log')
     plt.colorbar()
@@ -709,9 +734,18 @@ def read_dust_file(name='NGC5457', bins=30, off=45, cmap0='gist_heat',
     plt.title('Gas mass weighted DGR PDF', size=20)
     plt.savefig('output/' + name + 'hist2d_plt_pcolormesh.png')
 
+    plt.figure(figsize=(9, 6))
+    plt.semilogy(rbins, mean_HI, label='HI')
+    plt.semilogy(rbins, mean_H2, label=r'H$_2$')
+    plt.xlabel(r'Radius ($R_{25}$)', size=16)
+    plt.ylabel(r'Surface density', size=16)
+    plt.title('Test', size=20)
+    plt.savefig('output/' + name + 'hist2d_plt_test.png')
+
     plt.close("all")
 
 
+"""
 def vs_KINGFISH(name='NGC5457', targetSNR=10, dr25=0.025):
     df = pd.DataFrame()
 
@@ -719,16 +753,16 @@ def vs_KINGFISH(name='NGC5457', targetSNR=10, dr25=0.025):
         grp = hf[name]
         with np.errstate(invalid='ignore'):
             df['dust_fit'] = \
-                10**(np.array(grp.get('Dust_surface_density_log')).flatten())
-        serr = np.array(grp.get('Dust_surface_density_err_dex')).flatten()
+                10**(np.array(grp['Dust_surface_density_log']).flatten())
+        serr = np.array(grp['Dust_surface_density_err_dex']).flatten()
         D = float(np.array(grp['Galaxy_distance']))
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
-        df['dust_kf'] = np.array(grp.get('KINGFISH')).flatten() / 1E6
+        df['dust_kf'] = np.array(grp['KINGFISH']).flatten() / 1E6
         df['snr_kf'] = df['dust_kf'] / \
-            np.array(grp.get('KINGFISH_unc')).flatten() * 1E6
-        df['total_gas'] = np.array(grp.get('Total_gas')).flatten()
-        radius = np.array(grp.get('DP_RADIUS')).flatten()
+            np.array(grp['KINGFISH_unc']).flatten() * 1E6
+        df['total_gas'] = np.array(grp['Total_gas']).flatten()
+        radius = np.array(grp['DP_RADIUS']).flatten()
 
     R25 = gal_data([name]).field('R25_DEG')[0]
     R25 *= (np.pi / 180.) * (D * 1E3)
@@ -787,6 +821,8 @@ def vs_KINGFISH(name='NGC5457', targetSNR=10, dr25=0.025):
     fig.clf()
 
     plt.close("all")
+"""
+
 
 """
 def reject_outliers(data, sig=2.):
