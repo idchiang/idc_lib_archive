@@ -34,14 +34,14 @@ fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES', 'KINGFISH_DUST']
 
 
-def fitting(test=0, samples=M101, nwalkers=10, nsteps=500, bins=30, off=90.):
+def fitting(test=0, samples=M101, bins=30, off=90.):
     if test:
         samples = SSST
     elif type(samples) == str:
         samples = [samples]
 
     for sample in samples:
-        fdd(sample, nwalkers=nwalkers, nsteps=nsteps)
+        fdd(sample)
         rdf(sample, bins=bins, off=off)
 
 fitting()

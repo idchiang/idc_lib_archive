@@ -40,7 +40,7 @@ cali_mat2 = np.array([[0.1**2 + 0.02**2, 0.1**2, 0, 0, 0],
                       [0, 0, 0.08**2, 0.08**2, 0.08**2 + 0.015**2]])
 
 # Number of fitting parameters
-ndim = 2
+ndim = 3
 
 
 # Probability functions & model functions for fitting (internal)
@@ -51,9 +51,10 @@ def _B(T, freq=nu):
                 ).to(u.Jy).value * 1E-6
 
 
-def _model(wl, sigma, T, freq=nu):
+def _model(wl, sigma, T, beta, freq=nu):
     """Return fitted SED in MJy"""
-    return const * kappa160 * (160.0 / wl)**2 * sigma * _B(T * u.K, freq)
+    return const * kappa160 * (160.0 / wl)**beta * \
+        sigma * _B(T * u.K, freq)
 
 
 """
@@ -61,7 +62,7 @@ def _model(wl, sigma, T, freq=nu):
 
 def _sigma0(wl, SL, T):
     # Generate the inital guess of dust surface density
-    return SL * (wl / 160)**2 / const / kappa160 / \
+    return SL * (wl / 160)**const_beta / const / kappa160 / \
         _B(T * u.K, (c / wl / u.um).to(u.Hz))
 
 
@@ -91,7 +92,7 @@ def _lnprob(theta, x, y, inv_sigma2):
 """
 
 
-def fit_dust_density(name, nwalkers=20, nsteps=150):
+def fit_dust_density(name):
     """
     Inputs:
         df: <pandas DataFrame>
@@ -244,74 +245,70 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
     logsigma_step = 0.005
     min_logsigma = -4.
     max_logsigma = 1.
-    T_step = 0.05
+    T_step = 0.1
     min_T = 5.
     max_T = 50.
+    beta_step = 0.1
+    min_beta = 0.8
+    max_beta = 2.5
     logsigmas = np.arange(min_logsigma, max_logsigma, logsigma_step)
     Ts = np.arange(min_T, max_T, T_step)
-    logsigmas, Ts = np.meshgrid(logsigmas, Ts)
+    betas = np.arange(min_beta, max_beta, beta_step)
+    logsigmas, Ts, betas = np.meshgrid(logsigmas, Ts, betas)
     try:
         with File('output/rsrf_models.h5', 'r') as hf:
             models = np.array(hf['models'])
     except IOError:
-        models = np.zeros([Ts.shape[0], Ts.shape[1], 5])
-        """
-        print("Constructing control model...")
-        models0 = np.zeros([Ts.shape[0], Ts.shape[1], len(wl)])
-        for i in range(len(wl)):
-            models0[:, :, i] = _model(wl[i], 10**logsigmas, Ts, nu[i])
-        """
+        models = np.zeros([Ts.shape[0], Ts.shape[1], Ts.shape[2], 5])
         # Applying RSRFs to generate fake-observed models
         print("Constructing PACS RSRF model...")
         tic = clock()
         pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
         pacs_wl = pacs_rsrf['Wavelength'].values
         pacs_nu = (c / pacs_wl / u.um).to(u.Hz)
-        pacs_100 = pacs_rsrf['PACS_100'].values
-        pacs_160 = pacs_rsrf['PACS_160'].values
-        pacs_dnu = pacs_rsrf['dnu'].values[0]
+        pacs100dnu = pacs_rsrf['PACS_100'].values * pacs_rsrf['dnu'].values[0]
+        pacs160dnu = pacs_rsrf['PACS_160'].values * pacs_rsrf['dnu'].values[0]
         del pacs_rsrf
         #
-        pacs_models = np.zeros([Ts.shape[0], Ts.shape[1], len(pacs_wl)])
+        pacs_models = np.zeros([Ts.shape[0], Ts.shape[1], Ts.shape[2],
+                                len(pacs_wl)])
         for i in range(len(pacs_wl)):
-            pacs_models[:, :, i] = _model(pacs_wl[i], 10**logsigmas, Ts,
-                                          pacs_nu[i])
+            pacs_models[:, :, :, i] = _model(pacs_wl[i], 10**logsigmas, Ts,
+                                             betas, pacs_nu[i])
         del pacs_nu
-        models[:, :, 0] = np.sum(pacs_models * pacs_dnu * pacs_100,
-                                 axis=2) / np.sum(pacs_dnu * pacs_100 *
-                                                  pacs_wl / wl[0])
-        models[:, :, 1] = np.sum(pacs_models * pacs_dnu * pacs_160,
-                                 axis=2) / np.sum(pacs_dnu * pacs_160 *
-                                                  pacs_wl / wl[1])
+        models[:, :, :, 0] = np.sum(pacs_models * pacs100dnu, axis=3) / \
+            np.sum(pacs100dnu * pacs_wl / wl[0])
+        models[:, :, :, 1] = np.sum(pacs_models * pacs160dnu, axis=3) / \
+            np.sum(pacs160dnu * pacs_wl / wl[1])
         #
-        del pacs_wl, pacs_100, pacs_160, pacs_dnu, pacs_models
+        del pacs_wl, pacs100dnu, pacs160dnu, pacs_models
         ##
         print("Constructing SPIRE RSRF model...")
         spire_rsrf = pd.read_csv("data/RSRF/SPIRE_RSRF.csv")
         spire_wl = spire_rsrf['Wavelength'].values
         spire_nu = (c / spire_wl / u.um).to(u.Hz)
-        spire_250 = spire_rsrf['SPIRE_250'].values
-        spire_350 = spire_rsrf['SPIRE_350'].values
-        spire_500 = spire_rsrf['SPIRE_500'].values
-        spire_dnu = spire_rsrf['dnu'].values[0]
+        spire250dnu = spire_rsrf['SPIRE_250'].values * \
+            spire_rsrf['dnu'].values[0]
+        spire350dnu = spire_rsrf['SPIRE_350'].values * \
+            spire_rsrf['dnu'].values[0]
+        spire500dnu = spire_rsrf['SPIRE_500'].values * \
+            spire_rsrf['dnu'].values[0]
         del spire_rsrf
         #
-        spire_models = np.zeros([Ts.shape[0], Ts.shape[1], len(spire_wl)])
+        spire_models = np.zeros([Ts.shape[0], Ts.shape[1], Ts.shape[2],
+                                 len(spire_wl)])
         for i in range(len(spire_wl)):
-            spire_models[:, :, i] = _model(spire_wl[i], 10**logsigmas, Ts,
-                                           spire_nu[i])
+            spire_models[:, :, :, i] = _model(spire_wl[i], 10**logsigmas, Ts,
+                                              betas, spire_nu[i])
         del spire_nu
-        models[:, :, 2] = np.sum(spire_models * spire_dnu * spire_250,
-                                 axis=2) / np.sum(spire_dnu * spire_250 *
-                                                  spire_wl / wl[2])
-        models[:, :, 3] = np.sum(spire_models * spire_dnu * spire_350,
-                                 axis=2) / np.sum(spire_dnu * spire_350 *
-                                                  spire_wl / wl[3])
-        models[:, :, 4] = np.sum(spire_models * spire_dnu * spire_500,
-                                 axis=2) / np.sum(spire_dnu * spire_500 *
-                                                  spire_wl / wl[4])
+        models[:, :, :, 2] = np.sum(spire_models * spire250dnu, axis=3) / \
+            np.sum(spire250dnu * spire_wl / wl[2])
+        models[:, :, :, 3] = np.sum(spire_models * spire350dnu, axis=3) / \
+            np.sum(spire350dnu * spire_wl / wl[3])
+        models[:, :, :, 4] = np.sum(spire_models * spire500dnu, axis=3) / \
+            np.sum(spire500dnu * spire_wl / wl[4])
         #
-        del spire_wl, spire_250, spire_350, spire_500, spire_dnu
+        del spire_wl, spire250dnu, spire350dnu, spire500dnu
         del spire_models
         print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
         with File('output/rsrf_models.h5', 'a') as hf:
@@ -356,14 +353,17 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         diff = models - sed_avg[i]
         temp_matrix = np.empty_like(diff)
         for i in range(5):
-            temp_matrix[:, :, i] = np.sum(diff * cov_n1[:, i], axis=2)
-        chi2 = np.sum(temp_matrix * diff, axis=2)
+            temp_matrix[:, :, :, i] = np.sum(diff * cov_n1[:, i], axis=3)
+        chi2 = np.sum(temp_matrix * diff, axis=3)
         """ Find the (s, t) that gives Maximum likelihood """
         temp = chi2.argmin()
-        tempa, tempb = temp // chi2.shape[1], temp % chi2.shape[1]
-        s_ML = logsigmas[tempa, tempb]
-        t_ML = Ts[tempa, tempb]
-
+        tempa = temp // (chi2.shape[1] * chi2.shape[2])
+        temp = temp % (chi2.shape[1] * chi2.shape[2])
+        tempb = temp // chi2.shape[2]
+        tempc = temp % chi2.shape[2]
+        s_ML = logsigmas[tempa, tempb, tempc]
+        t_ML = Ts[tempa, tempb, tempc]
+        b_ML = betas[tempa, tempb, tempc]
         """ Show map """
         # plt.figure()
         # imshowid(np.log10(-lnprobs))
@@ -375,8 +375,8 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         """ Continue saving """
         pr = np.exp(-0.5 * chi2)
         mask = chi2 < np.nanmin(chi2) + 12
-        logsigmas_cp, Ts_cp, pr_cp = \
-            logsigmas[mask], Ts[mask], pr[mask]
+        logsigmas_cp, Ts_cp, betas_cp, pr_cp = \
+            logsigmas[mask], Ts[mask], betas[mask], pr[mask]
         #
         ids = np.argsort(logsigmas_cp)
         logsigmas_cp = logsigmas_cp[ids]
@@ -391,13 +391,21 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         csp = np.cumsum(prT)[:-1]
         csp = np.append(0, csp / csp[-1])
         sst = np.interp([0.16, 0.5, 0.84], csp, Ts_cp).tolist()
+        #
+        idb = np.argsort(betas_cp)
+        betas_cp = betas_cp[idb]
+        prb = pr_cp[idb]
+        csp = np.cumsum(prb)[:-1]
+        csp = np.append(0, csp / csp[-1])
+        ssb = np.interp([0.16, 0.5, 0.84], csp, betas_cp).tolist()
         """ Saving to results """
-        sss[1], sst[1] = s_ML, t_ML
-        popt[bin_] = np.array([sss[1], sst[1]])
+        sss[1], sst[1], ssb[1] = s_ML, t_ML, b_ML
+        popt[bin_] = np.array([sss[1], sst[1], ssb[1]])
         perr[bin_] = np.array([max(sss[2]-sss[1], sss[1]-sss[0]),
-                               max(sst[2]-sst[1], sst[1]-sst[0])])
+                               max(sst[2]-sst[1], sst[1]-sst[0]),
+                               max(ssb[2]-ssb[1], ssb[1]-ssb[0])])
         """ New: saving PDF """
-        pdf = np.sum(pr, axis=0)
+        pdf = np.sum(pr, axis=(0, 2))
         pdf /= np.sum(pdf)
         pdfs = pdfs.append([pdf])
 
@@ -423,6 +431,8 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         # serr in dex
         grp.create_dataset('Dust_temperature', data=popt[:, :, 1])
         grp.create_dataset('Dust_temperature_err', data=perr[:, :, 1])
+        grp.create_dataset('beta', data=popt[:, :, 2])
+        grp.create_dataset('beta_err', data=perr[:, :, 2])
         grp.create_dataset('Herschel_covariance_matrix', data=cov_n1_map)
         grp.create_dataset('Binmap', data=binmap)
         grp.create_dataset('Galaxy_distance', data=D)
@@ -431,7 +441,7 @@ def fit_dust_density(name, nwalkers=20, nsteps=150):
         grp.create_dataset('PA', data=PA)
         grp.create_dataset('PS', data=PS)
         grp.create_dataset('Radius_map', data=radiusmap)  # kpc
-        grp.create_dataset('logsigmas', data=logsigmas[0])
+        grp.create_dataset('logsigmas', data=logsigmas[0, :, 0])
     print("Datasets saved.")
 
 """
@@ -534,6 +544,8 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
         serr = np.array(grp['Dust_surface_density_err_dex'])  # in dex
         topt = np.array(grp['Dust_temperature'])
         terr = np.array(grp['Dust_temperature_err'])
+        bopt = np.array(grp['beta'])
+        berr = np.array(grp['beta_err'])
         total_gas = np.array(grp['Total_gas'])
         sed = np.array(grp['Herschel_SED'])
         cov_n1_map = np.array(grp['Herschel_covariance_matrix'])
@@ -564,7 +576,8 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     for bin_ in binlist:
         mask = binmap == bin_
         cov_n1 = cov_n1_map[mask][0]
-        model = _model(wl, 10**logs_d[mask][0], topt[mask][0], nu)
+        model = _model(wl, 10**logs_d[mask][0], topt[mask][0], bopt[mask][0],
+                       nu)
         diff = (sed[mask][0] - model).reshape(5, 1)
         chi2[mask] = np.dot(np.dot(diff.T, cov_n1), diff)[0, 0]
         if chi2[mask][0] > off or serr[mask][0] > 1.:
@@ -572,6 +585,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
                 np.nan, np.nan, np.nan, np.nan, np.nan
             total_gas[mask], things[mask], heracles[mask] = \
                 np.nan, np.nan, np.nan
+            bopt[mask], berr[mask] = np.nan, np.nan
     logs_gas = np.log10(total_gas)
     # logs_HI = np.log10(things)
     logs_H2 = np.log10(heracles)
@@ -582,19 +596,23 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     R25 *= (np.pi / 180.) * (D * 1E3)
 
     # Fitting results
-    fig, ax = plt.subplots(2, 2, figsize=(15, 12))
+    fig, ax = plt.subplots(2, 3, figsize=(20, 12))
     cax = np.empty_like(ax)
     fig.suptitle(name, size=28, y=0.995)
     ax[0, 0].set_title(r'$\Sigma_d$ $(\log_{10}(M_\odot pc^{-2}))$', size=30)
     cax[0, 0] = ax[0, 0].imshow(logs_d, origin='lower', cmap=cmap0)
-    ax[0, 1].set_title(r'$\Sigma_d$ error (dex)', size=30)
-    cax[0, 1] = ax[0, 1].imshow(serr, origin='lower', cmap=cmap0)
-    ax[1, 0].set_title(r'$T_d$ ($K$)', size=30)
-    cax[1, 0] = ax[1, 0].imshow(topt, origin='lower', cmap=cmap0)
+    ax[1, 0].set_title(r'$\Sigma_d$ error (dex)', size=30)
+    cax[1, 0] = ax[1, 0].imshow(serr, origin='lower', cmap=cmap0)
+    ax[0, 1].set_title(r'$T_d$ ($K$)', size=30)
+    cax[0, 1] = ax[0, 1].imshow(topt, origin='lower', cmap=cmap0)
     ax[1, 1].set_title(r'$T_d$ error ($K$)', size=30)
     cax[1, 1] = ax[1, 1].imshow(terr, origin='lower', cmap=cmap0)
+    ax[0, 2].set_title(r'$\beta$', size=30)
+    cax[0, 2] = ax[0, 2].imshow(bopt, origin='lower', cmap=cmap0)
+    ax[1, 2].set_title(r'$\beta$ error', size=30)
+    cax[1, 2] = ax[1, 2].imshow(berr, origin='lower', cmap=cmap0)
     for i in range(2):
-        for j in range(2):
+        for j in range(3):
             fig.colorbar(cax[i, j], ax=ax[i, j])
     fig.tight_layout()
     fig.subplots_adjust(wspace=0.1, hspace=0.25)
@@ -628,7 +646,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
 
     # hist2d
     if len(logsigmas.shape) == 2:
-        logsigmas = logsigmas[0]
+        logsigmas = logsigmas[:, 0]
     sigmas = 10**logsigmas
     #
     pdfs = pd.read_csv('output/' + name + '_pdf.csv', index_col=0)
@@ -670,14 +688,16 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     sd_HI = things[mask]
     total_sd, _ = np.histogram(r_HI, rbins, weights=sd_HI)
     count_HI, _ = np.histogram(r_HI, rbins)
-    mean_HI = np.log10(total_sd / count_HI)
+    with np.errstate(invalid='ignore'):
+        mean_HI = np.log10(total_sd / count_HI)
     #
     mask = ~np.isnan(heracles)
     r_H2 = dp_radius[mask]
     sd_H2 = heracles[mask]
     total_sd, _ = np.histogram(r_H2, rbins, weights=sd_H2)
     count_H2, _ = np.histogram(r_H2, rbins)
-    mean_H2 = np.log10(total_sd / count_H2)
+    with np.errstate(invalid='ignore'):
+        mean_H2 = np.log10(total_sd / count_H2)
     #
     sbins = (sbins[:-1] + sbins[1:]) / 2
     rbins = (rbins[:-1] + rbins[1:]) / 2
@@ -693,7 +713,6 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
             csp = np.cumsum(counts[:, i])[:-1]
             csp = np.append(0, csp / csp[-1])
             sss = np.interp([0.16, 0.5, 0.84], csp, sbins)
-            """
             fig, ax = plt.subplots(2, 1)
             ax[0].semilogx([sss[0]] * len(counts[:, i]), counts[:, i],
                            label='16')
@@ -707,16 +726,16 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
             ax[0].semilogx(sbins, counts[:, i], label='PDF')
             ax[0].set_xlim([smin, smax])
             ax[0].legend()
-            """
+
             dgr_median.append(sss[1])
-            """
+
             ax[1].semilogx(sbins, counts2[:, i], label='Unweighted PDF')
             ax[1].set_xlim([smin, smax])
             ax[1].legend()
             fig.savefig('output/' + name + '_' + str(i) + '_' +
                         str(rbins[i]) + '.png')
             plt.close('all')
-            """
+
         else:
             zeromask[i] = False
     #
