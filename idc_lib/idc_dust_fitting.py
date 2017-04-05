@@ -644,6 +644,14 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     fig.savefig('output/' + name + '_DGR_Sd_GAS.png')
     fig.clf()
 
+    plt.figure()
+    plt.imshow(logdgr, alpha=0.8, origin='lower', cmap='gist_heat')
+    plt.colorbar()
+    plt.imshow(logs_H2, alpha=0.6, origin='lower', cmap='bone')
+    plt.colorbar()
+    plt.title(r'DGR overlay with $H_2$ map', size=24)
+    plt.savefig('output/' + name + '_DGR_H2_OL.png')
+
     # hist2d
     if len(logsigmas.shape) == 2:
         logsigmas = logsigmas[:, 0]
@@ -653,6 +661,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     pdfs.index = pdfs.index.astype(int)
     #
     radiusmap /= R25
+    dp_radius /= R25
     #
     r, s, w = [], [], []
     for i in pdfs.index:
@@ -689,7 +698,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     total_sd, _ = np.histogram(r_HI, rbins, weights=sd_HI)
     count_HI, _ = np.histogram(r_HI, rbins)
     with np.errstate(invalid='ignore'):
-        mean_HI = np.log10(total_sd / count_HI)
+        mean_HI = total_sd / count_HI
     #
     mask = ~np.isnan(heracles)
     r_H2 = dp_radius[mask]
@@ -697,7 +706,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     total_sd, _ = np.histogram(r_H2, rbins, weights=sd_H2)
     count_H2, _ = np.histogram(r_H2, rbins)
     with np.errstate(invalid='ignore'):
-        mean_H2 = np.log10(total_sd / count_H2)
+        mean_H2 = total_sd / count_H2
     #
     sbins = (sbins[:-1] + sbins[1:]) / 2
     rbins = (rbins[:-1] + rbins[1:]) / 2
@@ -758,8 +767,9 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     plt.semilogy(rbins, mean_H2, label=r'H$_2$')
     plt.xlabel(r'Radius ($R_{25}$)', size=16)
     plt.ylabel(r'Surface density', size=16)
-    plt.title('Test', size=20)
-    plt.savefig('output/' + name + 'hist2d_plt_test.png')
+    plt.title('Gas surface densities', size=20)
+    plt.legend()
+    plt.savefig('output/' + name + 'hist2d_plt_HIH2.png')
 
     plt.close("all")
 

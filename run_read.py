@@ -28,6 +28,7 @@ fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES', 'KINGFISH_DUST']
 
 
+# Qt: Session management error: Could not open network socket
 def read(test=0, samples=M101, bins=30, off=90., cmap0='gist_heat',
          dr25=0.025):
     if test:
