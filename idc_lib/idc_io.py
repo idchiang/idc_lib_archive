@@ -10,6 +10,7 @@ from h5py import File
 from time import clock
 # from .plot_idchiang import imshowid
 from . import idc_regrid as ric
+from .gal_data import gal_data
 
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 H2HaHe = 1.36
@@ -118,6 +119,8 @@ class Surveys(object):
             name1, name2 = 'DDO', '154'
         elif name[:3] == 'NGC':
             name1, name2 = 'NGC', name[3:]
+            if survey == 'GALEX_FUV' and name2 == '5457':
+                filename = 'data/GALEX/ngc5457_clean_FUV.fits'
         elif name[:2] == 'IC':
             name1, name2 = 'IC', name[2:]
         else:
@@ -194,6 +197,15 @@ class Surveys(object):
                            '_S500_110_SSS_111_Model_SurfBr_Mdust.fits.gz'
                 uncfn = 'data/KINGFISH/' + name1 + name2 + \
                         '_S500_110_SSS_111_Model_SurfBr_Mdust_unc.fits.gz'
+            elif survey == 'GALEX_FUV':
+                print('I haven"t writen codes for GALEX FUV except M101...')
+                return 0
+            elif survey == 'MIPS_24':
+                filename = 'data/MIPS/' + name1 + '_' + name2 + \
+                    '_I_MIPS24_d2009.fits.gz'
+            elif survey == 'IRAC_3.6':
+                filename = 'data/IRAC/' + name1 + '_' + name2 + \
+                    '_I_IRAC_3.6_d2009.fits.gz'
             else:
                 raise ValueError(survey + ' not supported.')
 
@@ -207,7 +219,7 @@ class Surveys(object):
             elif survey in ['PACS_100', 'PACS_160']:
                 uncdata = data[1]
             else:
-                uncdata = None
+                uncdata = np.zeros(data.shape)
 
             if survey == 'THINGS':
                 # THINGS: Raw data in JY/B*M/s. Change to
@@ -227,6 +239,7 @@ class Surveys(object):
                 data = data[0]
                 # print survey + " not supported for density calculation!!"
             elif survey == 'SPIRE_500':
+                # In MJy/sr
                 data *= 0.9195
                 uncdata *= 0.9195
             elif survey == 'SPIRE_350':
@@ -235,6 +248,9 @@ class Surveys(object):
             elif survey == 'SPIRE_250':
                 data *= 0.9282
                 uncdata *= 0.9282
+            elif survey == 'IRAC_3.6':
+                data *= 0.91
+                uncdata += 0.91
 
             w = wcs.WCS(hdr, naxis=2)
             # add the generated data to dataframe
@@ -265,6 +281,7 @@ class Surveys(object):
             s['DP_RADIUS'] = self.dp_radius(s) if \
                 (survey == 'SPIRE_500') else np.zeros([1, 1])
             s['RVR'] = np.zeros([1, 1])
+            s['logSFR'] = np.zeros([1, 1])
             """
             if cal:
                 print "Calculating " + name + "..."
@@ -300,7 +317,7 @@ class Surveys(object):
                                  '_to_' + name2 + '.fits.gz')
         FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15,
                 'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04,
-                'HERACLES': 13}
+                'HERACLES': 13, 'GALEX_FUV': 4.48, 'MIPS_24': 6.43}
         # Note: pixel scale of SPIRE 500 ~ 14.00
         if not FWHM1s:
             for name1 in name1s:
@@ -435,6 +452,29 @@ class Surveys(object):
                          sinPA * dp_coords[:, :, 1]) / cosINCL)**2) * \
             s.D * 1.0E3  # Radius in kpc
 
+    def SFR_FUV_plus_24(self, names):
+        names = [names] if type(names) == str else names
+        logCx = 43.35
+        for name in names:
+            print('Calculating ', name, ' SFR...')
+            fuv = self.df.loc[(name, 'GALEX_FUV')].RGD_MAP
+            mips24 = self.df.loc[(name, 'MIPS_24')].RGD_MAP
+            ps = self.df.loc[(name, 'SPIRE_500')].PS
+            nanmask1, nanmask2 = np.isnan(fuv), np.isnan(mips24)
+            fuv[nanmask1], mips24[nanmask2] = 0.0, 0.0
+            nanmask = nanmask1 * nanmask1
+            logfuv_corr = np.log10(fuv + 3.89 * mips24)
+            logfuv_corr[nanmask] = np.nan
+            """ fuv in MJy / sr """
+            logfuv_corr += 6  # Now in Jy / sr
+            logfuv_corr += np.log10(ps[0] * ps[1] / (np.pi / 3600 / 180)**(-2))
+            # Now in Jy, or (ergs s-1) / Hz / cm2 / 10^23
+            # GALEX main lense diameter = 50cm
+            logfuv_corr += np.log10(1934144E9) + np.log10(np.pi * 25**2) + 23
+            # Lx in ergs s-1
+            logSFR = logfuv_corr - logCx
+            self.df.set_value((name, 'GALEX_FUV'), 'logSFR', logSFR)
+
     def save_data(self, names):
         """
         Inputs:
@@ -505,10 +545,13 @@ class Surveys(object):
             heracles = heracles[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             heracles_unc = heracles_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             # To avoid np.nan in H2 + signal in HI
-            heracles_unc[np.isnan(heracles)] = 0
-            heracles[np.isnan(heracles)] = 0
+            mask = np.isnan(heracles)
+            heracles_unc[mask] = 0
+            heracles[mask] = 0
             total_gas = col2sur * H2HaHe * things + heracles
             total_gas_unc = col2sur * H2HaHe * things_unc + heracles_unc
+            heracles_unc[mask] = np.nan
+            heracles[mask] = np.nan
             kingfish = kingfish[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
             kingfish_unc = \
                 kingfish_unc[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
@@ -569,3 +612,89 @@ class Surveys(object):
             plt.close()
             """
         print('All data saved.')
+
+    def save_SFR(self, names):
+        """
+        Inputs:
+            names: <list of str | str>
+                Object names to be saved.
+        """
+        names = [names] if type(names) == str else names
+        for name in names:
+            print('Saving', name, 'data...')
+            things = self.df.loc[(name, 'THINGS')].RGD_MAP
+            logsfr = self.df.loc[(name, 'GALEX_FUV')].logSFR
+            # Cutting off the nan region of THINGS map.
+            # [lc[0,0]:lc[0,1],lc[1,0]:lc[1,1]]
+            axissum = [0] * 2
+            lc = np.zeros([2, 2], dtype=int)
+            for i in range(2):
+                axissum[i] = np.nansum(things, axis=i, dtype=bool)
+                for j in range(len(axissum[i])):
+                    if axissum[i][j]:
+                        lc[i-1, 0] = j
+                        break
+                lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
+
+            # Cut the images and masks!!!
+            logsfr = logsfr[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+
+            with File('output/RGD_data.h5', 'a') as hf:
+                grp = hf[name]
+                grp.create_dataset('logSFR', data=logsfr)
+        print('All data saved.')
+
+
+def metallicity_to_coordinate(name='NGC5457'):
+    """ Reading & convolving """
+    cmaps = Surveys(name, ['THINGS', 'SPIRE_500'])
+    cmaps.add_kernel('Gauss_25', 'SPIRE_500')
+    cmaps.matching_PSF_2step(name, 'THINGS', 'Gauss_25', 'SPIRE_500')
+    cmaps.WCS_congrid(name, 'THINGS', 'SPIRE_500')
+    things = cmaps.df.loc[(name, 'THINGS')].RGD_MAP
+    s = cmaps.df.loc[(name, 'SPIRE_500')]
+    del cmaps
+    """ Calculating HI boundary """
+    axissum = [0] * 2
+    lc = np.zeros([2, 2], dtype=int)
+    for i in range(2):
+        axissum[i] = np.nansum(things, axis=i, dtype=bool)
+        for j in range(len(axissum[i])):
+            if axissum[i][j]:
+                lc[i-1, 0] = j
+                break
+        lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
+    """ Extracting some parameters for calculating radius """
+    cosPA = np.cos((s.PA) * np.pi / 180)
+    sinPA = np.sin((s.PA) * np.pi / 180)
+    cosINCL = np.cos(s.INCL * np.pi / 180)
+    w, ctr = s.WCS, SkyCoord(s.CMC)
+    R25 = gal_data.gal_data([name]).field('R25_DEG')[0] * (np.pi / 180.)
+    """ Calculating radius """
+    df = pd.read_csv('data/Tables/' + name + '_Z_modified.csv')
+    coords = np.empty([len(df), 2])
+    dp_coords = np.empty([len(df), 2])
+    xcm, ycm = ctr.ra.radian, ctr.dec.radian
+    for i in range(len(df)):
+        ra = df['RAJ2000'].iloc[i].strip().split(' ')
+        dec = df['DEJ2000'].iloc[i].strip().split(' ')
+        temp1 = ra[0] + 'h' + ra[1] + 'm' + ra[2] + 's ' + dec[0] + 'd' + \
+            dec[1] + 'm' + dec[2] + 's'
+        temp2 = SkyCoord(temp1)
+        coords[i] = np.array([temp2.ra.degree, temp2.dec.degree])
+        dp_coords[i] = np.array([temp2.ra.radian, temp2.dec.radian])
+    dp_coords[:, 0] = 0.5 * (dp_coords[:, 0] - xcm) * \
+        (np.cos(dp_coords[:, 1]) + np.cos(ycm))
+    dp_coords[:, 1] -= ycm
+    dp_radius = np.sqrt((cosPA * dp_coords[:, 1] +
+                        sinPA * dp_coords[:, 0])**2 +
+                        ((cosPA * dp_coords[:, 0] -
+                          sinPA * dp_coords[:, 1]) / cosINCL)**2) / R25
+    # Now, save DEC(y) in axis 0, RA(x) in axis 1.
+    coords[:, 0], coords[:, 1] = w.wcs_world2pix(coords[:, 0], coords[:, 1], 1)
+    coords[:, 0] -= lc[0, 0]
+    coords[:, 1] -= lc[1, 0]
+    df['r25'] = dp_radius
+    df['new_c1'] = coords[:, 0]
+    df['new_c2'] = coords[:, 1]
+    df.to_csv('output/' + name + '_metal.csv')
