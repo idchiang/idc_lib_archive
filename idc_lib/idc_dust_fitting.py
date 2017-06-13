@@ -9,7 +9,8 @@ from scipy.interpolate import griddata
 import astropy.units as u
 from astropy.constants import c, h, k_B
 # import corner
-from . import idc_voronoi, gal_data
+from . import idc_voronoi
+from .gal_data import gal_data
 
 
 # Dust fitting constants
@@ -75,7 +76,7 @@ def radial_map_gen(radiusmap, rbins, binvalues, zeromask):
     return result
 
 """
-# Reminders of MCMC fitting
+# Remainder of MCMC fitting
 
 def _sigma0(wl, SL, T):
     # Generate the inital guess of dust surface density
@@ -137,20 +138,16 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
     # SED in MJy / sr
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
-        total_gas = np.array(grp['Total_gas'])
-        sed = np.array(grp['Herschel_SED'])
-        sed_unc = np.array(grp['Herschel_SED_unc'])
-        bkgcov = np.array(grp['Herschel_bkgcov'])
-        diskmask = np.array(grp['Diskmask'])
-        glx_ctr = np.array(grp['Galaxy_center'])
-        D = float(np.array(grp['Galaxy_distance']))
-        INCL = float(np.array(grp['INCL']))
-        PA = float(np.array(grp['PA']))
-        PS = np.array(grp['PS'])
-        dp_radius = np.array(grp['DP_RADIUS'])
-        # THINGS_Limit = np.array(grp['THINGS_LIMIT'])
+        total_gas = np.array(grp['TOTAL_GAS'])
+        sed = np.array(grp['HERSCHEL_011111'])
+        sed_unc = np.array(grp['HERSCHEL_011111_UNCMAP'])
+        bkgcov = np.array(grp['HERSCHEL_011111_BKGCOV'])
+        diskmask = np.array(grp['HERSCHEL_011111_DISKMASK'])
+        D = float(np.array(grp['DIST_MPC']))
+        cosINCL = float(np.array(grp['cosINCL']))
+        dp_radius = np.array(grp['RADIUS_KPC'])
 
-    binmap = np.full_like(sed[:, :, 0], np.nan, dtype=int)
+    binmap = np.full_like(total_gas, np.nan, dtype=int)
     # Voronoi binning
     # d --> diskmasked, len() = sum(diskmask);
     # b --> binned, len() = number of binned area
@@ -166,7 +163,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
     if judgement < targetSN:
         print(name, 'is having just too low overall SNR. Will not fit')
 
-    fwhm_radius = fwhm_sp500 * D * 1E3 / np.cos(INCL * np.pi / 180)
+    fwhm_radius = fwhm_sp500 * D * 1E3 / cosINCL
     nlayers = int(np.nanmax(dp_radius) // fwhm_radius)
     masks = []
     with np.errstate(invalid='ignore'):
@@ -233,9 +230,10 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
     for i in range(len(signal_d)):
         binmap[y_d[i], x_d[i]] = binNum[i]
     binlist = np.unique(binNum)
-    print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+    print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
-    print("Generating grid...")
+    print("Reading/Generating fitting grid...")
+    tic = clock()
     """ Grid parameters """
     logsigma_step = 0.0025
     min_logsigma = -4.
@@ -271,8 +269,8 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
         else:
             models = np.zeros([Ts.shape[0], Ts.shape[1], Ts.shape[2], 5])
         # Applying RSRFs to generate fake-observed models
-        print("Constructing PACS RSRF model...")
-        tic = clock()
+        print(" --Constructing PACS RSRF model...")
+        ttic = clock()
         pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
         pacs_wl = pacs_rsrf['Wavelength'].values
         pacs_nu = (c / pacs_wl / u.um).to(u.Hz)
@@ -303,8 +301,10 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
                 np.sum(pacs160dnu * pacs_wl / wl[1])
         #
         del pacs_wl, pacs100dnu, pacs160dnu, pacs_models
+        print("   --Done. Elapsed time:", round(clock()-ttic, 3), "s.\n")
         ##
-        print("Constructing SPIRE RSRF model...")
+        print(" --Constructing SPIRE RSRF model...")
+        ttic = clock()
         spire_rsrf = pd.read_csv("data/RSRF/SPIRE_RSRF.csv")
         spire_wl = spire_rsrf['Wavelength'].values
         spire_nu = (c / spire_wl / u.um).to(u.Hz)
@@ -347,7 +347,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
         #
         del spire_wl, spire250dnu, spire350dnu, spire500dnu
         del spire_models
-        print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+        print("   --Done. Elapsed time:", round(clock()-ttic, 3), "s.\n")
         if fixed_beta:
             fn = 'output/rsrf_models_b_' + str(beta_f) + '.h5'
             with File(fn, 'a') as hf:
@@ -355,6 +355,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
         else:
             with File('output/rsrf_models.h5', 'a') as hf:
                 hf.create_dataset('models', data=models)
+    print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     # RSRF models with fixed beta and T values
     logsigmas_f = np.arange(min_logsigma, max_logsigma, logsigma_step)
@@ -413,7 +414,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
         #
         del spire_wl, spire250dnu, spire350dnu, spire500dnu
         del spire_models
-        print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+        print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.")
         with File('output/rsrf_models_f.h5', 'a') as hf:
             hf.create_dataset('models', data=models_f)
     """
@@ -431,7 +432,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
     # results = [] # array for saving all the raw chains
     for i in range(len(binlist)):
         if (i + 1) / len(binlist) > p:
-            print('Step', (i + 1), '/', str(len(binlist)) + '.',
+            print(' --Step', (i + 1), '/', str(len(binlist)) + '.',
                   "Elapsed time:", round(clock()-tic, 3), "s.")
             p += 0.1
         """ Binning everything """
@@ -580,7 +581,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
                 f_sopt[j].append(sss[1])
                 f_serr[j].append(max(sss[2]-sss[1], sss[1]-sss[0]))
 
-    print("Done. Elapsed time:", round(clock()-tic, 3), "s.")
+    print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.")
     # Saving to h5 file
     # Total_gas and dust in M_sun/pc**2
     # Temperature in K
@@ -588,8 +589,6 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
     # D in Mpc
     # Galaxy_distance in Mpc
     # Galaxy_center in pixel [y, x]
-    # INCL, PA in degrees
-    # PS in arcsec
     if fixed_beta:
         fn = '_dust_data_fb.h5'
     else:
@@ -610,10 +609,6 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=False, beta_f=2.0):
         hf.create_dataset('Binmap', data=binmap)
         hf.create_dataset('Binlist', data=binlist)
         hf.create_dataset('Galaxy_distance', data=D)
-        hf.create_dataset('Galaxy_center', data=glx_ctr)
-        hf.create_dataset('INCL', data=INCL)
-        hf.create_dataset('PA', data=PA)
-        hf.create_dataset('PS', data=PS)
         hf.create_dataset('Radius_avg', data=radius_avg)  # kpc
         hf.create_dataset('logsigmas', data=logsigmas_untouched)
         hf.create_dataset('Ts', data=Ts_untouched)
@@ -710,7 +705,7 @@ def read_dust_file(name='NGC5457', bins=30, off=45., cmap0='gist_heat',
     alogdgr = alogs_d - alogs_gas
     # Calculating distances
     # D in Mpc. Need r25 in kpc
-    R25 = gal_data.gal_data([name]).field('R25_DEG')[0]
+    R25 = gal_data([name]).field('R25_DEG')[0]
     R25 *= (np.pi / 180.) * (D * 1E3)
     aradius /= R25
     ubradius /= R25

@@ -5,6 +5,34 @@ from idc_lib import gal_data
 # New imports
 from scipy.optimize import curve_fit
 from scipy.stats.stats import pearsonr
+from idc_lib.idc_io import MGS
+
+
+M101 = ['NGC5457']  # Currently focusing on NGC5457
+all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250',
+               'PACS_160', 'PACS_100', 'HERACLES', 'MIPS_24', 'GALEX_FUV',
+               'IRAC_3.6']
+all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100',
+               'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
+fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
+                'PACS_100', 'HERACLES', 'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
+cut_surveys = ['RADIUS_KPC', 'SFR', 'SMSD']
+
+
+def generator(samples=M101):
+    mgs = MGS(samples, all_surveys)
+    mgs.add_kernel(all_kernels, 'SPIRE_500')
+    mgs.matching_PSF(samples, fine_surveys, 'SPIRE_500')
+    mgs.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
+    mgs.SFR(samples)
+    mgs.SMSD(samples)
+    mgs.total_gas(samples)
+    mgs.cut_image(samples, all_surveys)
+    mgs.cut_image(samples, cut_surveys, unc=False)
+    mgs.June09_test()
+    return mgs.df
+
+# df = generator()
 
 
 def f(x, a, b):
