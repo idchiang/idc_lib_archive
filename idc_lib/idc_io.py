@@ -3,6 +3,7 @@ import pandas as pd
 import astropy.units as u
 from astropy.io import fits
 from astropy import wcs
+from astropy.coordinates import SkyCoord
 from h5py import File
 from time import clock
 from . import idc_regrid as ric
@@ -571,59 +572,48 @@ class MGS(object):
             print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
 
-""" This part will not be working due to major change of MGS """
-"""
-def metallicity_to_coordinate(name='NGC5457'):
+def metallicity_to_coordinate(names=['NGC5457']):
+    names = [names] if type(names) == str else names
     # Reading & convolving
-    cmaps = MGS(name, ['THINGS', 'SPIRE_500'])
-    cmaps.add_kernel('Gauss_25', 'SPIRE_500')
-    cmaps.matching_PSF_2step(name, 'THINGS', 'Gauss_25', 'SPIRE_500')
-    cmaps.WCS_congrid(name, 'THINGS', 'SPIRE_500')
-    things = cmaps.df.loc[(name, 'THINGS')].RGD_MAP
-    s = cmaps.df.loc[(name, 'SPIRE_500')]
-    del cmaps
-    # Calculating HI boundary
-    axissum = [0] * 2
-    lc = np.zeros([2, 2], dtype=int)
-    for i in range(2):
-        axissum[i] = np.nansum(things, axis=i, dtype=bool)
-        for j in range(len(axissum[i])):
-            if axissum[i][j]:
-                lc[i-1, 0] = j
-                break
-        lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
-    # Extracting some parameters for calculating radius
-    cosPA = np.cos((s.PA) * np.pi / 180)
-    sinPA = np.sin((s.PA) * np.pi / 180)
-    cosINCL = np.cos(s.INCL * np.pi / 180)
-    w, ctr = s.WCS, SkyCoord(s.CMC)
-    R25 = gal_data([name]).field('R25_DEG')[0] * (np.pi / 180.)
-    # Calculating radius
-    df = pd.read_csv('data/Tables/' + name + '_Z_modified.csv')
-    coords = np.empty([len(df), 2])
-    dp_coords = np.empty([len(df), 2])
-    xcm, ycm = ctr.ra.radian, ctr.dec.radian
-    for i in range(len(df)):
-        ra = df['RAJ2000'].iloc[i].strip().split(' ')
-        dec = df['DEJ2000'].iloc[i].strip().split(' ')
-        temp1 = ra[0] + 'h' + ra[1] + 'm' + ra[2] + 's ' + dec[0] + 'd' + \
-            dec[1] + 'm' + dec[2] + 's'
-        temp2 = SkyCoord(temp1)
-        coords[i] = np.array([temp2.ra.degree, temp2.dec.degree])
-        dp_coords[i] = np.array([temp2.ra.radian, temp2.dec.radian])
-    dp_coords[:, 0] = 0.5 * (dp_coords[:, 0] - xcm) * \
-        (np.cos(dp_coords[:, 1]) + np.cos(ycm))
-    dp_coords[:, 1] -= ycm
-    dp_radius = np.sqrt((cosPA * dp_coords[:, 1] +
-                        sinPA * dp_coords[:, 0])**2 +
-                        ((cosPA * dp_coords[:, 0] -
-                          sinPA * dp_coords[:, 1]) / cosINCL)**2) / R25
-    # Now, save DEC(y) in axis 0, RA(x) in axis 1.
-    coords[:, 0], coords[:, 1] = w.wcs_world2pix(coords[:, 0], coords[:, 1], 1)
-    coords[:, 0] -= lc[0, 0]
-    coords[:, 1] -= lc[1, 0]
-    df['r25'] = dp_radius
-    df['new_c1'] = coords[:, 0]
-    df['new_c2'] = coords[:, 1]
-    df.to_csv('output/' + name + '_metal.csv')
-"""
+    mgs = MGS(names, ['THINGS', 'SPIRE_500'])
+    mgs.add_kernel('Gauss_25', 'SPIRE_500')
+    mgs.matching_PSF(names, 'THINGS', 'SPIRE_500')
+    mgs.WCS_congrid(names, 'THINGS', 'SPIRE_500')
+    mgs.BDR_cal(names)
+    for name in names:
+        # Extracting some parameters for calculating radius
+        lc = mgs.df.loc[name]['BDR']
+        cosPA = np.cos(mgs.df.loc[name]['PA_RAD'])
+        sinPA = np.sin(mgs.df.loc[name]['PA_RAD'])
+        cosINCL = mgs.df.loc[name]['cosINCL']
+        w = mgs.df.loc[name]['SPIRE_500_WCS']
+        R25 = mgs.df.loc[name]['R25_KPC'] / mgs.df.loc[name]['DIST_MPC'] / 1E3
+        xcm, ycm = mgs.df.loc[name]['RA_RAD'], mgs.df.loc[name]['DEC_RAD']
+        # Calculating radius
+        df = pd.read_csv('data/Tables/' + name + '_Z_modified.csv')
+        coords = np.empty([len(df), 2])
+        dp_coords = np.empty([len(df), 2])
+        for i in range(len(df)):
+            ra = df['RAJ2000'].iloc[i].strip().split(' ')
+            dec = df['DEJ2000'].iloc[i].strip().split(' ')
+            temp1 = ra[0] + 'h' + ra[1] + 'm' + ra[2] + 's ' + dec[0] + 'd' + \
+                dec[1] + 'm' + dec[2] + 's'
+            temp2 = SkyCoord(temp1)
+            coords[i] = np.array([temp2.ra.degree, temp2.dec.degree])
+            dp_coords[i] = np.array([temp2.ra.radian, temp2.dec.radian])
+        dp_coords[:, 0] = 0.5 * (dp_coords[:, 0] - xcm) * \
+            (np.cos(dp_coords[:, 1]) + np.cos(ycm))
+        dp_coords[:, 1] -= ycm
+        dp_radius = np.sqrt((cosPA * dp_coords[:, 1] +
+                            sinPA * dp_coords[:, 0])**2 +
+                            ((cosPA * dp_coords[:, 0] -
+                              sinPA * dp_coords[:, 1]) / cosINCL)**2) / R25
+        # Now, save DEC(y) in axis 0, RA(x) in axis 1.
+        coords[:, 0], coords[:, 1] = w.wcs_world2pix(coords[:, 0],
+                                                     coords[:, 1], 1)
+        coords[:, 0] -= lc[0, 0]
+        coords[:, 1] -= lc[1, 0]
+        df['r25'] = dp_radius
+        df['new_c1'] = coords[:, 0]
+        df['new_c2'] = coords[:, 1]
+        df.to_csv('output/' + name + '_metal.csv')

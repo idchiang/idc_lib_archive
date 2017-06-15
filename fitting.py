@@ -33,7 +33,7 @@ fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES', 'KINGFISH_DUST']
 
 
-def fitting(test=0, samples=M101, cov_mode=True, fixed_beta=None):
+def fitting(test=0, samples=M101, cov_mode=True, fixed_beta=True):
     if cov_mode is None:
         print('COV mode? (1 for COV, 0 for non-COV)')
         cov_mode = bool(int(input()))

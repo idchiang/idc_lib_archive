@@ -35,4 +35,4 @@ def generator(samples=M101):
     mgs.total_gas(samples)
     mgs.save_data(samples, save_surveys)
 
-generator()
+#generator()
