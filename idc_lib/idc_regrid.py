@@ -1,5 +1,6 @@
 import numpy as np
-from scipy.interpolate import interp2d, griddata
+from scipy.interpolate import interp2d
+# from scipy.interpolate import griddata
 from astropy.convolution import convolve_fft
 
 
@@ -12,10 +13,10 @@ def Kernel_regrid(kernel, ps, ps_old, method='cubic'):
     assert kernel.shape[0] == kernel.shape[1]
     assert len(kernel) % 2
     # Generating grid points. Ref Anaino total dimension ~729", half 364.5"
-    l = (len(kernel) - 1) // 2
-    x = np.arange(-l, l + 1) * ps_old[0] / ps[0]
-    y = np.arange(-l, l + 1) * ps_old[1] / ps[1]
-    lxn, lyn = (l * ps_old[0]) // ps[0], (l * ps_old[1]) // ps[1]
+    s = (len(kernel) - 1) // 2
+    x = np.arange(-s, s + 1) * ps_old[0] / ps[0]
+    y = np.arange(-s, s + 1) * ps_old[1] / ps[1]
+    lxn, lyn = (s * ps_old[0]) // ps[0], (s * ps_old[1]) // ps[1]
     xn, yn = np.arange(-lxn, lxn + 1), np.arange(-lyn, lyn + 1)
     # Start binning
     k = interp2d(x, y, kernel, kind=method, fill_value=np.nan)
@@ -53,6 +54,7 @@ def matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0):
     return map1, uncmap1
 
 
+"""
 def WCS_congrid(map0, uncmap0, w1, w2, l2, method='linear'):
     ratio = 1E18 if np.nanmax(uncmap0) > 1E18 else 1.0
     uncmap0 /= ratio
@@ -73,3 +75,4 @@ def WCS_congrid(map0, uncmap0, w1, w2, l2, method='linear'):
     uncmap1 = np.sqrt(griddata(points, uncmap0**2, (xng, yng), method=method))
     uncmap1 /= ratio
     return map1, uncmap1
+"""

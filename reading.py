@@ -26,14 +26,13 @@ M101 = ['NGC5457']  # Currently focusing on NGC5457
 
 # Qt: Session management error: Could not open network socket
 def read(test=0, samples=M101, off=90., cmap0='gist_heat',
-         dr25=0.025, ncmode=False, cmap1='Reds', cmap2='seismic',
-         fixed_beta=True):
+         dr25=0.025, ncmode=False, cmap1='Reds', cmap2='seismic'):
     samples = [samples] if type(samples) == str else samples
-    if fixed_beta is None:
-        print('Fix beta? (1 for fix, 0 for varying)')
-        fixed_beta = bool(int(input()))
+    print('Fix beta? (1 for fix, 0 for varying)')
+    fixed_beta = bool(int(input()))
+    print('Fix Temperature? (1 for fix, 0 for varying)')
+    fixed_T = bool(int(input()))
     for sample in samples:
-        rdf(sample, off=off, cmap0=cmap0, dr25=dr25,
-            cmap2=cmap2, fixed_beta=fixed_beta)
+        rdf(sample, fixed_beta=fixed_beta, fixed_T=fixed_T)
 
 read()

@@ -1,9 +1,12 @@
 import numpy as np
 import pandas as pd
 import astropy.units as u
+import matplotlib.pyplot as plt
 from astropy.io import fits
-from astropy import wcs
-from astropy.coordinates import SkyCoord
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord, Angle
+from sklearn import linear_model
+from reproject import reproject_interp
 from h5py import File
 from time import clock
 from . import idc_regrid as ric
@@ -21,6 +24,7 @@ class MGS(object):
         self.kernels = pd.DataFrame()
         if names and surveys:
             self.add_galaxies(names, surveys)
+        self.new = np.full(len(self.df), np.nan, object)
 
     def add_galaxies(self, names, surveys):
         """ Import fits files """
@@ -44,11 +48,12 @@ class MGS(object):
             s = pd.Series(name=name)
             temp_data = gal_data(name)
             s['DIST_MPC'] = temp_data.field('DIST_MPC')[0]
-            s['RA_RAD'] = temp_data.field('RA_DEG')[0] * np.pi / 180
-            s['DEC_RAD'] = temp_data.field('DEC_DEG')[0] * np.pi / 180
-            s['PA_RAD'] = temp_data.field('POSANG_DEG')[0] * np.pi / 180
-            s['cosINCL'] = np.cos(temp_data.field('INCL_DEG')[0] * np.pi / 180)
-            s['R25_KPC'] = temp_data.field('R25_DEG')[0] * (np.pi / 180.) * \
+            s['RA_RAD'] = Angle(temp_data.field('RA_DEG')[0] * u.deg).rad
+            s['DEC_RAD'] = Angle(temp_data.field('DEC_DEG')[0] * u.deg).rad
+            s['PA_RAD'] = Angle(temp_data.field('POSANG_DEG')[0] * u.deg).rad
+            s['cosINCL'] = np.cos(Angle(temp_data.field('INCL_DEG')[0] *
+                                        u.deg).rad)
+            s['R25_KPC'] = Angle(temp_data.field('R25_DEG')[0] * u.deg).rad * \
                 (s['DIST_MPC'] * 1E3)
             del temp_data
 
@@ -137,7 +142,19 @@ class MGS(object):
 
             # Start to read data
             data, hdr = fits.getdata(filename, 0, header=True)
-
+            hdr['NAXIS'] = 3
+            hdr['NAXIS3'] = 2
+            hdr['BUNIT'] = 'MJy/sr'
+            hdr.comments['BUNIT'] = '[IDC modified]'
+            hdr['CTYPE3'] = 'Signal map / Error map'
+            hdr.comments['CTYPE3'] = '[IDC modified]'
+            try:
+                idx = 4
+                while(1):
+                    hdr.remove('NAXIS' + str(idx))
+                    idx += 1
+            except KeyError:
+                pass
             if uncfn:
                 uncdata = fits.getdata(uncfn, 0, header=False)
             elif survey[:4] == 'PACS':
@@ -155,6 +172,24 @@ class MGS(object):
                     data *= 1.823E18 * 6.07E5 / 1.0E3 / temp_s['TBMAJ'] / \
                         temp_s['TBMIN']
                     uncdata = data * 0.05
+                    hdr['BUNIT'] = '1/cm^2'
+                    """
+                    import matplotlib.pyplot as plt
+                    fig, ax = plt.subplots()
+                    temp = np.log10(data)
+                    temp = temp[~np.isnan(temp)]
+                    temp = temp[~np.isinf(temp)]
+                    ax.hist(temp, bins=20)
+                    ax.set_yscale('log')
+                    fig.savefig('output/0814_hist.png')
+                    fig, ax = plt.subplots()
+                    temp = np.log10(data)
+                    temp[np.isinf(temp)] = np.nan
+                    CS = ax.contour(temp)
+                    plt.clabel(CS, fontsize=9, inline=1)
+                    fig.savefig('output/NHI_contour.png')
+                    plt.close('all')
+                    """
                 elif survey == 'HERACLES':
                     # HERACLES: Raw data in K*km/s. Change to
                     # surface density M_\odot/pc^2
@@ -163,6 +198,7 @@ class MGS(object):
                     R21 = 0.7
                     data *= R21 * temp_s['ACO']
                     uncdata *= R21 * temp_s['ACO']
+                    hdr['BUNIT'] = 'Solar_mass/pc^2'
                 del temp_s
             elif survey[:4] == 'PACS':
                 data = data[0]
@@ -181,7 +217,7 @@ class MGS(object):
                 data *= 0.91
                 uncdata *= 0.91
 
-            w = wcs.WCS(hdr, naxis=2)
+            w = WCS(hdr, naxis=2)
             s[survey + '_WCS'], s[survey] = w, data
             s[survey + '_UNCMAP'] = uncdata
             ctr = np.array(data.shape) // 2
@@ -189,8 +225,8 @@ class MGS(object):
             xs, ys = \
                 w.wcs_pix2world([ctr[0] - 1, ctr[0] + 1, ctr[0], ctr[0]],
                                 [ctr[1], ctr[1], ctr[1] - 1, ctr[1] + 1], 1)
-            ps[0] = np.abs(xs[0] - xs[1]) / 2 * np.cos((ys[0] + ys[1]) *
-                                                       np.pi / 2 / 180)
+            ps[0] = np.abs(xs[0] - xs[1]) / 2 * \
+                np.cos(Angle((ys[0] + ys[1]) * u.deg).rad / 2)
             ps[1] = np.abs(ys[3] - ys[2]) / 2
             ps *= u.degree.to(u.arcsec)
             if survey in ['PACS_160', 'PACS_100']:
@@ -199,8 +235,10 @@ class MGS(object):
             elif survey[:5] == 'GALEX':
                 data *= 1.073E-10 * (np.pi / 3600 / 180)**(-2) / ps[0] / ps[1]
             s[survey + '_PS'] = ps
+            s[survey + '_HDR'] = hdr
             s[survey + '_CVL'] = True if survey == 'SPIRE_500' else False
             s[survey + '_RGD'] = True if survey == 'SPIRE_500' else False
+            s[survey + '_BITPIX'] = abs(int(hdr['BITPIX']))
 
         s['RADIUS_KPC'] = self.dp_radius(s)
         s['RADIUS_KPC_RGD'] = True
@@ -239,22 +277,22 @@ class MGS(object):
 
     def dp_radius(self, s):
         """ Calculate the radius at each point """
-        l = np.array(s['SPIRE_500'].shape)
+        shape = np.array(s['SPIRE_500'].shape)
         cosPA, sinPA = np.cos(s['PA_RAD']), np.sin(s['PA_RAD'])
         cosINCL = s['cosINCL']
         w = s['SPIRE_500_WCS']
         xcm, ycm = s['RA_RAD'], s['DEC_RAD']
-        dp_coords = np.zeros([l[0], l[1], 2])
+        dp_coords = np.zeros([shape[0], shape[1], 2])
         # Original coordinate is (y, x)
         # :1 --> x, RA --> the one needed to be divided by cos(incl)
         # :0 --> y, Dec
         dp_coords[:, :, 0], dp_coords[:, :, 1] = \
-            np.meshgrid(np.arange(l[1]), np.arange(l[0]))
+            np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
         # Now, value inside dp_coords is (x, y)
         # :0 --> x, RA --> the one needed to be divided by cos(incl)
         # :1 --> y, Dec
-        for i in range(l[0]):
-            dp_coords[i] = w.wcs_pix2world(dp_coords[i], 1) * np.pi / 180
+        for i in range(shape[0]):
+            dp_coords[i] = Angle(w.wcs_pix2world(dp_coords[i], 1) * u.deg).rad
         dp_coords[:, :, 0] = 0.5 * (dp_coords[:, :, 0] - xcm) * \
             (np.cos(dp_coords[:, :, 1]) + np.cos(ycm))
         dp_coords[:, :, 1] -= ycm
@@ -315,22 +353,27 @@ class MGS(object):
                                        kernel)
 
             for name in names:
-                map0 = self.df.loc[name][survey1]
-                uncmap0 = self.df.loc[name][survey1 + '_UNCMAP']
-                if survey1 == 'THINGS':
-                    temp_s = pd.read_csv('data/Tables/galaxy_data.csv',
-                                         index_col=0).loc[name]
-                    bmaj, bmin, bpa = \
-                        temp_s['TBMAJ'], temp_s['TBMIN'], temp_s['TBPA']
-                    Gkernel = GK1(ps, bpa, bmaj, bmin, 25.0)
-                    map0, uncmap0 = \
-                        ric.matching_PSF(Gkernel, np.sqrt(bmaj * bmin), 25.0,
-                                         map0, uncmap0)
-                cvl_image, cvl_unc = \
-                    ric.matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0)
-                self.df.set_value(name, survey1, cvl_image)
-                self.df.set_value(name, survey1 + '_UNCMAP', cvl_unc)
-                self.df.set_value(name, survey1 + '_CVL', True)
+                fn = 'data/PROCESSED/' + name + '/' + survey1 + '_RGD.fits'
+                try:
+                    data = fits.getdata(fn, 0, header=False)
+                    del data
+                except FileNotFoundError:
+                    map0 = self.df.loc[name][survey1]
+                    uncmap0 = self.df.loc[name][survey1 + '_UNCMAP']
+                    if survey1 == 'THINGS':
+                        temp_s = pd.read_csv('data/Tables/galaxy_data.csv',
+                                             index_col=0).loc[name]
+                        bmaj, bmin, bpa = \
+                            temp_s['TBMAJ'], temp_s['TBMIN'], temp_s['TBPA']
+                        Gkernel = GK1(ps, bpa, bmaj, bmin, 25.0)
+                        map0, uncmap0 = \
+                            ric.matching_PSF(Gkernel, np.sqrt(bmaj * bmin),
+                                             25.0, map0, uncmap0)
+                    cvl_image, cvl_unc = \
+                        ric.matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0)
+                    self.df.set_value(name, survey1, cvl_image)
+                    self.df.set_value(name, survey1 + '_UNCMAP', cvl_unc)
+                    self.df.set_value(name, survey1 + '_CVL', True)
             print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def WCS_congrid(self, names, fine_surveys, course_survey, method='linear'):
@@ -341,14 +384,52 @@ class MGS(object):
             print('Regridding', len(names), 'galaxies in', fine_survey + '...')
             tic = clock()
             for name in names:
-                assert self.df.loc[name][fine_survey + '_CVL']
-                rgd_image, rgd_unc = \
+                fn = 'data/PROCESSED/' + name + '/' + fine_survey + '_RGD.fits'
+                try:
+                    rgd_image, rgd_unc = fits.getdata(fn, 0, header=False)
+                    if self.df.loc[name][fine_survey + '_BITPIX'] == 32:
+                        rgd_image, rgd_unc = rgd_image.astype(np.float32), \
+                            rgd_unc.astype(np.float32)
+                    elif self.df.loc[name][fine_survey + '_BITPIX'] == 16:
+                        rgd_image, rgd_unc = rgd_image.astype(np.float16), \
+                            rgd_unc.astype(np.float16)
+                except FileNotFoundError:
+                    assert self.df.loc[name][fine_survey + '_CVL']
+                    """
+                    # Old code
+                    rgd_image, rgd_unc = \
                     ric.WCS_congrid(self.df.loc[name][fine_survey],
                                     self.df.loc[name][fine_survey + '_UNCMAP'],
                                     self.df.loc[name][fine_survey + '_WCS'],
                                     self.df.loc[name][course_survey + '_WCS'],
                                     self.df.loc[name][course_survey].shape,
                                     method)
+                    """
+                    # New code
+                    s_out = self.df.loc[name][course_survey].shape
+                    w_out = self.df.loc[name][course_survey + '_WCS']
+                    w_in = self.df.loc[name][fine_survey + '_WCS']
+                    rgd_image, _ = \
+                        reproject_interp((self.df.loc[name][fine_survey],
+                                          w_in), w_out, s_out)
+                    rgd_unc, _ = \
+                        reproject_interp((self.df.loc[name][fine_survey +
+                                                            '_UNCMAP'], w_in),
+                                         w_out, s_out)
+                    if self.df.loc[name][fine_survey + '_BITPIX'] == 32:
+                        rgd_image, rgd_unc = rgd_image.astype(np.float32), \
+                            rgd_unc.astype(np.float32)
+                    elif self.df.loc[name][fine_survey + '_BITPIX'] == 16:
+                        rgd_image, rgd_unc = rgd_image.astype(np.float16), \
+                            rgd_unc.astype(np.float16)
+                    hdu = fits.PrimaryHDU(np.array([rgd_image, rgd_unc]),
+                                          header=self.df.loc[name]
+                                          [fine_survey + '_HDR'])
+                    hdu.header.comments['NAXIS'] = \
+                        '[IDC modified] Number of data axes.'
+                    hdu.header.comments['NAXIS3'] = \
+                        '[IDC modified] Signal / Error'
+                    hdu.writeto(fn)
                 self.df.set_value(name, fine_survey, rgd_image)
                 self.df.set_value(name, fine_survey + '_UNCMAP', rgd_unc)
                 self.df.set_value(name, fine_survey + '_RGD', True)
@@ -371,7 +452,7 @@ class MGS(object):
             try:
                 self.df.set_value(name, 'SFR', SFR)
             except ValueError:
-                self.df['SFR'] = np.full(len(self.df), np.nan, object)
+                self.df['SFR'] = self.new
                 self.df.set_value(name, 'SFR', SFR)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
@@ -390,7 +471,7 @@ class MGS(object):
             try:
                 self.df.set_value(name, 'SMSD', smsd)
             except ValueError:
-                self.df['SMSD'] = np.full(len(self.df), np.nan, object)
+                self.df['SMSD'] = self.new
                 self.df.set_value(name, 'SMSD', smsd)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
@@ -415,9 +496,8 @@ class MGS(object):
                 self.df.set_value(name, 'TOTAL_GAS', total_gas)
                 self.df.set_value(name, 'TOTAL_GAS_UNCMAP', total_gas_unc)
             except ValueError:
-                temp = np.full(len(self.df), np.nan, object)
-                self.df['TOTAL_GAS'] = temp
-                self.df['TOTAL_GAS_UNCMAP'] = temp
+                self.df['TOTAL_GAS'] = self.new
+                self.df['TOTAL_GAS_UNCMAP'] = self.new
                 self.df.set_value(name, 'TOTAL_GAS', total_gas)
                 self.df.set_value(name, 'TOTAL_GAS_UNCMAP', total_gas_unc)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
@@ -444,9 +524,10 @@ class MGS(object):
             try:
                 self.df.set_value(name, 'BDR', lc)
             except ValueError:
-                self.df['BDR'] = np.full(len(self.df), np.nan, object)
+                self.df['BDR'] = self.new
                 self.df.set_value(name, 'BDR', lc)
         print("   --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
+        return lc
 
     def crop_image(self, names, surveys, unc=True):
         names = [names] if type(names) == str else names
@@ -458,54 +539,95 @@ class MGS(object):
                 try:
                     lc = self.df.loc[name]['BDR']
                 except KeyError:
-                    self.BDR_cal(name)
-                    lc = self.df.loc[name]['BDR']
-                assert self.df.loc[name][survey + '_RGD']
-                data = self.df.loc[name][survey]
-                self.df.set_value(name, survey,
-                                  data[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]])
+                    lc = self.BDR_cal(name)
+                # assert self.df.loc[name][survey + '_RGD']
+                data = self.df.\
+                    loc[name][survey][lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+                self.df.set_value(name, survey, data)
                 if unc:
-                    uncmap = self.df.loc[name][survey + '_UNCMAP']
-                    self.df.set_value(name, survey + '_UNCMAP',
-                                      uncmap[lc[0, 0]:lc[0, 1],
-                                             lc[1, 0]:lc[1, 1]])
+                    uncmap = self.df.\
+                        loc[name][survey + '_UNCMAP'][lc[0, 0]:lc[0, 1],
+                                                      lc[1, 0]:lc[1, 1]]
+                    self.df.set_value(name, survey + '_UNCMAP', uncmap)
+                if survey == 'THINGS':
+                    with np.errstate(invalid='ignore'):
+                        diskmask = data > self.THINGS_Limit
+                    try:
+                        self.df.set_value(name, 'DISKMASK', diskmask)
+                    except ValueError:
+                        self.df['DISKMASK'] = self.new
+                        self.df.set_value(name, 'DISKMASK', diskmask)
+                elif survey == 'HERSCHEL_011111':
+                    t = self.df.loc[name]['HERSCHEL_011111_DISKMASK']
+                    t = t[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
+                    self.df.set_value(name, 'HERSCHEL_011111_DISKMASK', t)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
-    def bkg_removal(self, names, surveys, THINGS_Limit=1.0E17):
+    def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18):
+        self.THINGS_Limit = THINGS_Limit
         names = [names] if type(names) == str else names
         surveys = [surveys] if type(surveys) == str else surveys
         print('Removing background of', len(names), 'galaxies in',
               len(surveys), 'surveys...')
         tic = clock()
         for name in names:
-            try:
-                diskmask = self.df.loc[name]['DISKMASK']
-            except KeyError:
-                assert self.df.loc[name]['THINGS_RGD']
-                with np.errstate(invalid='ignore'):
-                    diskmask = self.df.loc[name]['THINGS'] > THINGS_Limit
-                try:
-                    self.df.set_value(name, 'DISKMASK', diskmask)
-                except ValueError:
-                    self.df['DISKMASK'] = np.full(len(self.df), np.nan, object)
-                    self.df.set_value(name, 'DISKMASK', diskmask)
+            with np.errstate(invalid='ignore'):
+                tbkgmask = ~(self.df.loc[name]['THINGS'] > THINGS_Limit)
             for survey in surveys:
                 if survey == 'HERSCHEL_011111':
                     sub_surveys = ['PACS_100', 'PACS_160', 'SPIRE_250',
                                    'SPIRE_350', 'SPIRE_500']
-                    lc = self.df.loc[name]['BDR']
-                    data = np.zeros([lc[0, 1] - lc[0, 0], lc[1, 1] - lc[1, 0],
-                                     5])
+                    temp = self.df.loc[name]['THINGS'].shape
+                    data = np.zeros([temp[0], temp[1], 5])
+                    del temp
                     uncmap = np.empty_like(data)
                     for i in range(len(sub_surveys)):
                         assert self.df.loc[name][sub_surveys[i] + '_RGD']
                         data[:, :, i] = self.df.loc[name][sub_surveys[i]]
                         uncmap[:, :, i] = \
                             self.df.loc[name][sub_surveys[i] + '_UNCMAP']
-                        bkg = np.nanmedian(data[~diskmask][i])
-                        data[:, :, i] -= bkg
-                    n_nanmask = ~np.sum(np.isnan(data), axis=2, dtype=bool)
-                    bkgmask = n_nanmask * (~diskmask)
+                        bkgmask = tbkgmask * (~np.isnan(data[:, :, i]))
+                        bkg_plane, coef = \
+                            self.bkg_tilted_plane(data[:, :, i], bkgmask)
+                        try:
+                            self.df.set_value(name,
+                                              sub_surveys[i] + '_BKGPLANE',
+                                              coef)
+                        except ValueError:
+                            self.df[sub_surveys[i] + '_BKGPLANE'] = self.new
+                            self.df.set_value(name,
+                                              sub_surveys[i] + '_BKGPLANE',
+                                              coef)
+                        """
+                        h1 = data[bkgmask][:, i]
+                        h1 = h1[~(np.isnan(h1) + np.isinf(h1))]
+                        h2 = h1 - np.median(h1)
+                        """
+                        data[:, :, i] -= bkg_plane
+                        """
+                        fig, ax = plt.subplots(3)
+                        h3 = data[bkgmask][:, i]
+                        h3 = h3[~(np.isnan(h3) + np.isinf(h3))]
+                        ax[0].hist(h1, bins=20)
+                        ax[1].hist(h2, bins=20)
+                        ax[2].hist(h3, bins=20)
+                        fig.savefig('output/' + sub_surveys[i] + 'hists.png')
+                        """
+                    """
+                    for i in range(5):
+                        temp = data[:, :, i]
+                        temp[diskmask] = np.nan
+                        fig, ax = plt.subplots(1, 2, figsize=(16, 10))
+                        cax = ax[0].imshow(temp, origin='lower')
+                        fig.colorbar(cax, ax=ax[0])
+                        temp = temp[~np.isnan(temp)]
+                        ax[1].hist(temp, bins=51)
+                        fig.savefig('output/0_0811_' + sub_surveys[i] +
+                                    '_bkg.png')
+                    plt.close('all')
+                    """
+                    bkgmask = tbkgmask * (~np.sum(np.isnan(data), axis=2,
+                                                  dtype=bool))
                     bkgcov = np.cov(data[bkgmask].T)
                     try:
                         self.df.set_value(name, 'HERSCHEL_011111', data)
@@ -516,11 +638,10 @@ class MGS(object):
                         self.df.set_value(name, 'HERSCHEL_011111_DISKMASK',
                                           ~bkgmask)
                     except ValueError:
-                        temp = np.full(len(self.df), np.nan, object)
-                        self.df['HERSCHEL_011111'] = temp
-                        self.df['HERSCHEL_011111_UNCMAP'] = temp
-                        self.df['HERSCHEL_011111_BKGCOV'] = temp
-                        self.df['HERSCHEL_011111_DISKMASK'] = temp
+                        self.df['HERSCHEL_011111'] = self.new
+                        self.df['HERSCHEL_011111_UNCMAP'] = self.new
+                        self.df['HERSCHEL_011111_BKGCOV'] = self.new
+                        self.df['HERSCHEL_011111_DISKMASK'] = self.new
                         self.df.set_value(name, 'HERSCHEL_011111', data)
                         self.df.set_value(name, 'HERSCHEL_011111_UNCMAP',
                                           uncmap)
@@ -531,13 +652,52 @@ class MGS(object):
                 else:
                     assert self.df.loc[name][survey + '_RGD']
                     data = self.df.loc[name][survey]
-                    n_nanmask = ~np.isnan(data)
-                    bkgmask = n_nanmask * (~diskmask)
-                    bkg = np.median(data[bkgmask]) if np.sum(bkgmask) else 0.0
-                    self.df.set_value(name, survey, data - bkg)
+                    bkgmask = tbkgmask * (~np.isnan(data))
+                    if bkgmask.sum():
+                        bkg_plane, coef = self.bkg_tilted_plane(data, bkgmask)
+                    else:
+                        bkg_plane, coef = np.zeros_like(data), [np.nan] * 3
+                    try:
+                        self.df.set_value(name, survey + '_BKGPLANE', coef)
+                    except ValueError:
+                        self.df[survey + '_BKGPLANE'] = self.new
+                        self.df.set_value(name, survey + '_BKGPLANE', coef)
+                    """
+                    h1 = data[bkgmask]
+                    h1 = h1[~(np.isnan(h1) + np.isinf(h1))]
+                    h2 = h1 - np.median(h1)
+                    """
+                    data -= bkg_plane
+                    """
+                    h3 = data[bkgmask]
+                    h3 = h3[~(np.isnan(h3) + np.isinf(h3))]
+                    fig, ax = plt.subplots()
+                    ax.hist(h1, bins=20)
+                    fig.savefig('output/' + survey + 'hists_origin.png')
+                    fig, ax = plt.subplots()
+                    ax.hist(h2, bins=20)
+                    fig.savefig('output/' + survey + 'hists_median.png')
+                    fig, ax = plt.subplots()
+                    ax.hist(h3, bins=20)
+                    fig.savefig('output/' + survey + 'hists_titled.png')
+                    plt.close('all')
+                    """
+                    self.df.set_value(name, survey, data)
                 print(' --' + name, 'in', survey + ':', np.sum(bkgmask),
                       'effective background pixels.')
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
+
+    def bkg_tilted_plane(self, image, bkgmask):
+        m, n = image.shape
+        q, p = np.meshgrid(np.arange(n), np.arange(m))
+        #
+        regr = linear_model.LinearRegression()
+        DataX = np.array([p[bkgmask], q[bkgmask]]).T
+        regr.fit(DataX, image[bkgmask])
+        bkg_plane = \
+            regr.predict(np.array([p.flatten(), q.flatten()]).T).reshape(m, n)
+        coef = np.append(regr.coef_, regr.intercept_)
+        return bkg_plane, coef
 
     def save_data(self, names, surveys):
         """
@@ -583,16 +743,10 @@ def metallicity_to_coordinate(names=['NGC5457']):
     for name in names:
         # Extracting some parameters for calculating radius
         lc = mgs.df.loc[name]['BDR']
-        cosPA = np.cos(mgs.df.loc[name]['PA_RAD'])
-        sinPA = np.sin(mgs.df.loc[name]['PA_RAD'])
-        cosINCL = mgs.df.loc[name]['cosINCL']
         w = mgs.df.loc[name]['SPIRE_500_WCS']
-        R25 = mgs.df.loc[name]['R25_KPC'] / mgs.df.loc[name]['DIST_MPC'] / 1E3
-        xcm, ycm = mgs.df.loc[name]['RA_RAD'], mgs.df.loc[name]['DEC_RAD']
         # Calculating radius
         df = pd.read_csv('data/Tables/' + name + '_Z_modified.csv')
         coords = np.empty([len(df), 2])
-        dp_coords = np.empty([len(df), 2])
         for i in range(len(df)):
             ra = df['RAJ2000'].iloc[i].strip().split(' ')
             dec = df['DEJ2000'].iloc[i].strip().split(' ')
@@ -600,20 +754,11 @@ def metallicity_to_coordinate(names=['NGC5457']):
                 dec[1] + 'm' + dec[2] + 's'
             temp2 = SkyCoord(temp1)
             coords[i] = np.array([temp2.ra.degree, temp2.dec.degree])
-            dp_coords[i] = np.array([temp2.ra.radian, temp2.dec.radian])
-        dp_coords[:, 0] = 0.5 * (dp_coords[:, 0] - xcm) * \
-            (np.cos(dp_coords[:, 1]) + np.cos(ycm))
-        dp_coords[:, 1] -= ycm
-        dp_radius = np.sqrt((cosPA * dp_coords[:, 1] +
-                            sinPA * dp_coords[:, 0])**2 +
-                            ((cosPA * dp_coords[:, 0] -
-                              sinPA * dp_coords[:, 1]) / cosINCL)**2) / R25
         # Now, save DEC(y) in axis 0, RA(x) in axis 1.
         coords[:, 0], coords[:, 1] = w.wcs_world2pix(coords[:, 0],
                                                      coords[:, 1], 1)
         coords[:, 0] -= lc[0, 0]
         coords[:, 1] -= lc[1, 0]
-        df['r25'] = dp_radius
         df['new_c1'] = coords[:, 0]
         df['new_c2'] = coords[:, 1]
-        df.to_csv('output/' + name + '_metal.csv')
+        df.to_csv('output/Metal_' + name + '.csv')

@@ -14,6 +14,8 @@ all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100',
                'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES', 'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
+crop_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'IRAC_3.6',
+                'MIPS_24', 'GALEX_FUV']
 cut_surveys = ['RADIUS_KPC']
 bkg_rm_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'IRAC_3.6',
                   'MIPS_24', 'GALEX_FUV']
@@ -27,12 +29,13 @@ def generator(samples=M101):
     mgs.add_kernel(all_kernels, 'SPIRE_500')
     mgs.matching_PSF(samples, fine_surveys, 'SPIRE_500')
     mgs.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
-    mgs.crop_image(samples, all_surveys)
-    mgs.crop_image(samples, cut_surveys, unc=False)
     mgs.bkg_removal(samples, bkg_rm_surveys)
+    mgs.crop_image(samples, crop_surveys)
+    mgs.crop_image(samples, cut_surveys, unc=False)
     mgs.SFR(samples)
     mgs.SMSD(samples)
     mgs.total_gas(samples)
     mgs.save_data(samples, save_surveys)
 
-#generator()
+
+# generator()
