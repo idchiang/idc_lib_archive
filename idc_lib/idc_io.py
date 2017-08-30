@@ -1,18 +1,19 @@
 import numpy as np
 import pandas as pd
 import astropy.units as u
-import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord, Angle
 from sklearn import linear_model
-from reproject import reproject_interp
+from reproject import reproject_exact
 from h5py import File
 from time import clock
 from . import idc_regrid as ric
 from .gal_data import gal_data
 from .idc_math import reasonably_close as cls
 from .idc_math import Gaussian_Kernel_C1 as GK1
+# import matplotlib.pyplot as plt
+# plt.ion()
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 H2HaHe = 1.36
 
@@ -398,24 +399,27 @@ class MGS(object):
                     """
                     # Old code
                     rgd_image, rgd_unc = \
-                    ric.WCS_congrid(self.df.loc[name][fine_survey],
-                                    self.df.loc[name][fine_survey + '_UNCMAP'],
-                                    self.df.loc[name][fine_survey + '_WCS'],
-                                    self.df.loc[name][course_survey + '_WCS'],
-                                    self.df.loc[name][course_survey].shape,
-                                    method)
+                        ric.WCS_congrid(self.df.loc[name][fine_survey],
+                                        self.df.loc[name][fine_survey +
+                                                          '_UNCMAP'],
+                                        self.df.loc[name][fine_survey +
+                                                          '_WCS'],
+                                        self.df.loc[name][course_survey +
+                                                          '_WCS'],
+                                        self.df.loc[name][course_survey].shape,
+                                        method)
                     """
                     # New code
                     s_out = self.df.loc[name][course_survey].shape
                     w_out = self.df.loc[name][course_survey + '_WCS']
                     w_in = self.df.loc[name][fine_survey + '_WCS']
                     rgd_image, _ = \
-                        reproject_interp((self.df.loc[name][fine_survey],
-                                          w_in), w_out, s_out)
+                        reproject_exact((self.df.loc[name][fine_survey],
+                                         w_in), w_out, s_out)
                     rgd_unc, _ = \
-                        reproject_interp((self.df.loc[name][fine_survey +
-                                                            '_UNCMAP'], w_in),
-                                         w_out, s_out)
+                        reproject_exact((self.df.loc[name][fine_survey +
+                                                           '_UNCMAP'], w_in),
+                                        w_out, s_out)
                     if self.df.loc[name][fine_survey + '_BITPIX'] == 32:
                         rgd_image, rgd_unc = rgd_image.astype(np.float32), \
                             rgd_unc.astype(np.float32)
@@ -557,10 +561,10 @@ class MGS(object):
                     except ValueError:
                         self.df['DISKMASK'] = self.new
                         self.df.set_value(name, 'DISKMASK', diskmask)
-                elif survey == 'HERSCHEL_011111':
-                    t = self.df.loc[name]['HERSCHEL_011111_DISKMASK']
+                elif survey[:9] == 'HERSCHEL_':
+                    t = self.df.loc[name][survey + '_DISKMASK']
                     t = t[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
-                    self.df.set_value(name, 'HERSCHEL_011111_DISKMASK', t)
+                    self.df.set_value(name, survey + '_DISKMASK', t)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18):
@@ -574,11 +578,13 @@ class MGS(object):
             with np.errstate(invalid='ignore'):
                 tbkgmask = ~(self.df.loc[name]['THINGS'] > THINGS_Limit)
             for survey in surveys:
-                if survey == 'HERSCHEL_011111':
-                    sub_surveys = ['PACS_100', 'PACS_160', 'SPIRE_250',
-                                   'SPIRE_350', 'SPIRE_500']
+                if survey[:9] == 'HERSCHEL_':
+                    all_ = np.array(['PACS_70', 'PACS_100', 'PACS_160',
+                                     'SPIRE_250', 'SPIRE_350', 'SPIRE_500'])
+                    slc = np.array([bool(int(s)) for s in survey[9:]])
+                    sub_surveys = all_[slc]
                     temp = self.df.loc[name]['THINGS'].shape
-                    data = np.zeros([temp[0], temp[1], 5])
+                    data = np.zeros([temp[0], temp[1], len(sub_surveys)])
                     del temp
                     uncmap = np.empty_like(data)
                     for i in range(len(sub_surveys)):
@@ -598,57 +604,27 @@ class MGS(object):
                             self.df.set_value(name,
                                               sub_surveys[i] + '_BKGPLANE',
                                               coef)
-                        """
-                        h1 = data[bkgmask][:, i]
-                        h1 = h1[~(np.isnan(h1) + np.isinf(h1))]
-                        h2 = h1 - np.median(h1)
-                        """
                         data[:, :, i] -= bkg_plane
-                        """
-                        fig, ax = plt.subplots(3)
-                        h3 = data[bkgmask][:, i]
-                        h3 = h3[~(np.isnan(h3) + np.isinf(h3))]
-                        ax[0].hist(h1, bins=20)
-                        ax[1].hist(h2, bins=20)
-                        ax[2].hist(h3, bins=20)
-                        fig.savefig('output/' + sub_surveys[i] + 'hists.png')
-                        """
-                    """
-                    for i in range(5):
-                        temp = data[:, :, i]
-                        temp[diskmask] = np.nan
-                        fig, ax = plt.subplots(1, 2, figsize=(16, 10))
-                        cax = ax[0].imshow(temp, origin='lower')
-                        fig.colorbar(cax, ax=ax[0])
-                        temp = temp[~np.isnan(temp)]
-                        ax[1].hist(temp, bins=51)
-                        fig.savefig('output/0_0811_' + sub_surveys[i] +
-                                    '_bkg.png')
-                    plt.close('all')
-                    """
                     bkgmask = tbkgmask * (~np.sum(np.isnan(data), axis=2,
                                                   dtype=bool))
                     bkgcov = np.cov(data[bkgmask].T)
                     try:
-                        self.df.set_value(name, 'HERSCHEL_011111', data)
-                        self.df.set_value(name, 'HERSCHEL_011111_UNCMAP',
+                        self.df.set_value(name, survey, data)
+                        self.df.set_value(name, survey + '_UNCMAP',
                                           uncmap)
-                        self.df.set_value(name, 'HERSCHEL_011111_BKGCOV',
+                        self.df.set_value(name, survey + '_BKGCOV',
                                           bkgcov)
-                        self.df.set_value(name, 'HERSCHEL_011111_DISKMASK',
+                        self.df.set_value(name, survey + '_DISKMASK',
                                           ~bkgmask)
                     except ValueError:
-                        self.df['HERSCHEL_011111'] = self.new
-                        self.df['HERSCHEL_011111_UNCMAP'] = self.new
-                        self.df['HERSCHEL_011111_BKGCOV'] = self.new
-                        self.df['HERSCHEL_011111_DISKMASK'] = self.new
-                        self.df.set_value(name, 'HERSCHEL_011111', data)
-                        self.df.set_value(name, 'HERSCHEL_011111_UNCMAP',
-                                          uncmap)
-                        self.df.set_value(name, 'HERSCHEL_011111_BKGCOV',
-                                          bkgcov)
-                        self.df.set_value(name, 'HERSCHEL_011111_DISKMASK',
-                                          ~bkgmask)
+                        self.df[survey] = self.new
+                        self.df[survey + '_UNCMAP'] = self.new
+                        self.df[survey + '_BKGCOV'] = self.new
+                        self.df[survey + '_DISKMASK'] = self.new
+                        self.df.set_value(name, survey, data)
+                        self.df.set_value(name, survey + '_UNCMAP', uncmap)
+                        self.df.set_value(name, survey + '_BKGCOV', bkgcov)
+                        self.df.set_value(name, survey + '_DISKMASK', ~bkgmask)
                 else:
                     assert self.df.loc[name][survey + '_RGD']
                     data = self.df.loc[name][survey]
@@ -662,26 +638,7 @@ class MGS(object):
                     except ValueError:
                         self.df[survey + '_BKGPLANE'] = self.new
                         self.df.set_value(name, survey + '_BKGPLANE', coef)
-                    """
-                    h1 = data[bkgmask]
-                    h1 = h1[~(np.isnan(h1) + np.isinf(h1))]
-                    h2 = h1 - np.median(h1)
-                    """
                     data -= bkg_plane
-                    """
-                    h3 = data[bkgmask]
-                    h3 = h3[~(np.isnan(h3) + np.isinf(h3))]
-                    fig, ax = plt.subplots()
-                    ax.hist(h1, bins=20)
-                    fig.savefig('output/' + survey + 'hists_origin.png')
-                    fig, ax = plt.subplots()
-                    ax.hist(h2, bins=20)
-                    fig.savefig('output/' + survey + 'hists_median.png')
-                    fig, ax = plt.subplots()
-                    ax.hist(h3, bins=20)
-                    fig.savefig('output/' + survey + 'hists_titled.png')
-                    plt.close('all')
-                    """
                     self.df.set_value(name, survey, data)
                 print(' --' + name, 'in', survey + ':', np.sum(bkgmask),
                       'effective background pixels.')
@@ -697,6 +654,8 @@ class MGS(object):
         bkg_plane = \
             regr.predict(np.array([p.flatten(), q.flatten()]).T).reshape(m, n)
         coef = np.append(regr.coef_, regr.intercept_)
+        # plt.figure()
+        # plt.imshow(bkg_plane, origin='lower')
         return bkg_plane, coef
 
     def save_data(self, names, surveys):
@@ -722,13 +681,13 @@ class MGS(object):
                         grp.create_dataset(survey + '_UNCMAP',
                                            data=self.df.loc[name][survey +
                                                                   '_UNCMAP'])
-                    if survey == 'HERSCHEL_011111':
-                        grp.create_dataset('HERSCHEL_011111_BKGCOV',
+                    if survey[:9] == 'HERSCHEL_':
+                        grp.create_dataset(survey + '_BKGCOV',
                                            data=self.df.loc[name]
-                                           ['HERSCHEL_011111_BKGCOV'])
-                        grp.create_dataset('HERSCHEL_011111_DISKMASK',
+                                           [survey + '_BKGCOV'])
+                        grp.create_dataset(survey + '_DISKMASK',
                                            data=self.df.loc[name]
-                                           ['HERSCHEL_011111_DISKMASK'])
+                                           [survey + '_DISKMASK'])
             print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
 

@@ -107,7 +107,8 @@ def _lnprob(theta, x, y, inv_sigma2):
 """
 
 
-def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
+def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0,
+                     method='011111'):
     """
     Inputs:
         df: <pandas DataFrame>
@@ -127,7 +128,20 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
     targetSN = 5
     ndim = 2 if fixed_beta else 3
     plt.ioff()
-
+    PAU = 10.0 / 100.0  # PACS Absolute Uncertainty
+    PRU = 2.0 / 100.0  # PACS Relative Uncertainty
+    SAU = 8.0 / 100.0  # SPIRE Absolute Uncertainty
+    SRU = 1.5 / 100.0  # SPIRE Relative Uncertainty
+    cali_mat2 = np.array([[PAU + PRU, PAU, 0, 0, 0],
+                          [PAU, PAU + PRU, 0, 0, 0],
+                          [0, 0, SAU + SRU, SAU, SAU],
+                          [0, 0, SAU, SAU + SRU, SAU],
+                          [0, 0, SAU, SAU, SAU + SRU]])**2
+    calerr_matrix2 = np.array([PAU + PRU, PAU + PRU, SAU + SRU, SAU + SRU,
+                               SAU + SRU]) ** 2
+    if method == '001111':
+        cali_mat2 = cali_mat2[1:, 1:]
+        calerr_matrix2 = calerr_matrix2[1:]
     if cov_mode is None:
         print('COV mode? (1 for COV, 0 for non-COV)')
         cov_mode = bool(int(input()))
@@ -137,10 +151,11 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
         total_gas = np.array(grp['TOTAL_GAS'])
-        sed = np.array(grp['HERSCHEL_011111'])
-        sed_unc = np.array(grp['HERSCHEL_011111_UNCMAP'])
-        bkgcov = np.array(grp['HERSCHEL_011111_BKGCOV'])
-        diskmask = np.array(grp['HERSCHEL_011111_DISKMASK'])
+        sed = np.array(grp['HERSCHEL_' + method])
+        sed_unc = np.array(grp['HERSCHEL_' + method + '_UNCMAP'])
+        bkgcov = np.array(grp['HERSCHEL_' + method + '_BKGCOV'])
+        diskmask = np.array(grp['HERSCHEL_' + method + '_DISKMASK'])
+        nwl = len(bkgcov)
         D = float(np.array(grp['DIST_MPC']))
         cosINCL = float(np.array(grp['cosINCL']))
         dp_radius = np.array(grp['RADIUS_KPC'])
@@ -151,7 +166,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
     # b --> binned, len() = number of binned area
     try:
         with File('output/Voronoi_data.h5', 'r') as hf:
-            grp = hf[name]
+            grp = hf[name + '_' + method]
             binlist = np.array(grp['BINLIST'])
             binmap = np.array(grp['BINMAP'])
             gas_avg = np.array(grp['GAS_AVG'])
@@ -159,10 +174,10 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
             cov_n1s = np.array(grp['Herschel_covariance_matrix'])
             inv_sigma2s = np.array(grp['Herschel_variance'])
             radius_avg = np.array(grp['Radius_avg'])
-    except OSError:
+    except (OSError, ValueError, KeyError):
         print("Start binning " + name + "...")
         tic = clock()
-        noise4snr = np.array([np.sqrt(bkgcov[i, i]) for i in range(5)])
+        noise4snr = np.array([np.sqrt(bkgcov[i, i]) for i in range(nwl)])
         diskmask *= ~np.isnan(np.sum(sed, axis=2))
         temp_snr = sed[diskmask] / noise4snr
         signal_d = np.array([np.min(temp_snr[i]) for i in
@@ -250,7 +265,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
         ax[1, 1].imshow(testimage3, origin='lower', cmap='jet')
         ax[1, 1].set_title('Final bins')
         fig.tight_layout()
-        pp = PdfPages('output/' + name + '_Voronnoi.pdf')
+        pp = PdfPages('output/' + name + '_Voronnoi_' + method + '.pdf')
         pp.savefig(fig)
         pp.close()
         plt.close('all')
@@ -269,9 +284,9 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
             # bkg Covariance matrix
             bkgcov_avg = bkgcov / np.sum(bin_)
             # uncertainty diagonal matrix
-            unc2cov_avg = np.identity(5) * unc2_avg
+            unc2cov_avg = np.identity(nwl) * unc2_avg
             # calibration error covariance matrix
-            sed_vec = sed_avg[-1].reshape(1, 5)
+            sed_vec = sed_avg[-1].reshape(1, nwl)
             calcov = sed_vec.T * cali_mat2 * sed_vec
             # Finally everything for covariance matrix is here...
             cov_n1 = np.linalg.inv(bkgcov_avg + unc2cov_avg + calcov)
@@ -284,7 +299,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
             # Finally everything for variance is here...
             inv_sigma2s.append(1 / (bkg2_avg + calerr2 + unc2_avg))
         with File('output/Voronoi_data.h5', 'a') as hf:
-            grp = hf.create_group(name)
+            grp = hf.create_group(name + '_' + method)
             grp.create_dataset('BINLIST', data=binlist)
             grp.create_dataset('BINMAP', data=binmap)
             grp.create_dataset('GAS_AVG', data=np.array(gas_avg))
@@ -429,6 +444,11 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
     sopt, serr, topt, terr, bopt, berr = [], [], [], [], [], []
     b_model = []
     pdfs, t_pdfs, b_pdfs = [], [], []
+    if method == '001111':
+        if ndim == 2:
+            models = models[:, :, 1:]
+        elif ndim == 3:
+            models = models[:, :, :, 1:]
     # results = [] # array for saving all the raw chains
     for i in range(len(binlist)):
         if (i + 1) / len(binlist) > p:
@@ -442,11 +462,11 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
             diff = models - sed_avg[i]
             temp_matrix = np.empty_like(diff)
             if fixed_beta:
-                for j in range(5):
+                for j in range(nwl):
                     temp_matrix[:, :, j] = np.sum(diff * cov_n1[:, j],
                                                   axis=ndim)
             else:
-                for j in range(5):
+                for j in range(nwl):
                     temp_matrix[:, :, :, j] = np.sum(diff * cov_n1[:, j],
                                                      axis=ndim)
             chi2 = np.sum(temp_matrix * diff, axis=ndim)
@@ -536,10 +556,10 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
     # Galaxy_distance in Mpc
     # Galaxy_center in pixel [y, x]
     if fixed_beta:
-        fn = 'output/Dust_data_fb_'
+        fn = 'output/Dust_data_FB_'
     else:
-        fn = 'output/Dust_data_' if cov_mode else 'output/Dust_data_nc_'
-    with File(fn + name + '.h5', 'a') as hf:
+        fn = 'output/Dust_data_AF_' if cov_mode else 'output/Dust_data_nc_'
+    with File(fn + name + '_' + method + '.h5', 'a') as hf:
         hf.create_dataset('Dust_surface_density_log', data=sopt)
         # sopt in log scale (search sss)
         hf.create_dataset('Dust_surface_density_err_dex', data=serr)
@@ -559,17 +579,18 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0):
 
 
 def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
-                          dbin=250, cmap1='Reds', Tmin=5):
+                          dbin=250, cmap1='Reds', Tmin=5, method='011111'):
     ndim = 2
-    with File('output/Dust_data_fb_' + name + '.h5', 'a') as hf:
+    with File('output/Dust_data_FB_' + name + '_' + method + '.h5', 'a') as hf:
         aT = np.array(hf['Dust_temperature'])
     with File('output/Voronoi_data.h5', 'r') as hf:
-        grp = hf[name]
+        grp = hf[name + '_' + method]
         binlist = np.array(grp['BINLIST'])
         binmap = np.array(grp['BINMAP'])
         # gas_avg = np.array(grp['GAS_AVG'])
         ased = np.array(grp['Herschel_SED'])
         acovn1 = np.array(grp['Herschel_covariance_matrix'])
+        nwl = len(acovn1[0])
         # inv_sigma2s = np.array(grp['Herschel_variance'])
         aRadius = np.array(grp['Radius_avg'])
     with File('output/RGD_data.h5', 'r') as hf:
@@ -602,7 +623,7 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
     print("Reading/Generating fitting grid...")
     tic = clock()
     """ Grid parameters """
-    logsigma_step = 0.025
+    logsigma_step = 0.0025
     min_logsigma = -4.
     max_logsigma = 1.
     logsigmas_untouched = np.arange(min_logsigma, max_logsigma, logsigma_step)
@@ -667,6 +688,11 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
     p = 0
     sopt, serr, b_model = [], [], []
     pdfs = np.zeros([len(binlist), len(logsigmas_untouched)], dtype=float)
+    if method == '001111':
+        if ndim == 2:
+            models = models[:, :, 1:]
+        elif ndim == 3:
+            models = models[:, :, :, 1:]
     # results = [] # array for saving all the raw chains
     for i in range(len(binlist)):
         if (i + 1) / len(binlist) > p:
@@ -674,10 +700,10 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
                   "Elapsed time:", round(clock()-tic, 3), "s.")
             p += 0.1
         """ Binning everything """
-        diff = (models[Ts_untouched == aT_pred[i]] - ased[i]).reshape(-1, 5)
+        diff = (models[Ts_untouched == aT_pred[i]] - ased[i]).reshape(-1, nwl)
         temp_matrix = np.empty_like(diff)
         cov_n1 = acovn1[i]
-        for j in range(5):
+        for j in range(nwl):
             temp_matrix[:, j] = np.sum(diff * cov_n1[:, j], axis=1)
         chi2 = np.sum(temp_matrix * diff, axis=1)
         """ Find the (s, t) that gives Maximum likelihood """
@@ -685,7 +711,7 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
             sopt.append(np.nan)
             serr.append(np.nan)
             pdfs[i] = np.zeros(len(logsigmas_untouched), dtype=float)
-            b_model.append(np.full(5, np.nan, dtype=float))
+            b_model.append(np.full(nwl, np.nan, dtype=float))
         else:
             s_ML = logsigmas_untouched[chi2.argmin()]
             """ Continue saving """
@@ -724,7 +750,8 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
     # D in Mpc
     # Galaxy_distance in Mpc
     # Galaxy_center in pixel [y, x]
-    with File('output/Dust_data_fbft_' + name + '.h5', 'a') as hf:
+    with File('output/Dust_data_FBT_' + name + '_' + method + '.h5', 'a') as \
+            hf:
         hf.create_dataset('Dust_surface_density_log', data=sopt)
         hf.create_dataset('Dust_surface_density_err_dex', data=serr)
         hf.create_dataset('Dust_temperature', data=aT_pred)

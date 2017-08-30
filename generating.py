@@ -14,14 +14,14 @@ all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100',
                'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES', 'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
-crop_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'IRAC_3.6',
-                'MIPS_24', 'GALEX_FUV']
+crop_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
+                'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
 cut_surveys = ['RADIUS_KPC']
-bkg_rm_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'IRAC_3.6',
+bkg_rm_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
                   'MIPS_24', 'GALEX_FUV']
-save_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'RADIUS_KPC',
-                'SFR', 'SMSD', 'TOTAL_GAS', 'DIST_MPC', 'PA_RAD', 'cosINCL',
-                'R25_KPC', 'SPIRE_500_PS']
+save_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
+                'RADIUS_KPC', 'SFR', 'SMSD', 'TOTAL_GAS', 'DIST_MPC', 'PA_RAD',
+                'cosINCL', 'R25_KPC', 'SPIRE_500_PS']
 
 
 def generator(samples=M101):
@@ -30,6 +30,7 @@ def generator(samples=M101):
     mgs.matching_PSF(samples, fine_surveys, 'SPIRE_500')
     mgs.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
     mgs.bkg_removal(samples, bkg_rm_surveys)
+    return 0
     mgs.crop_image(samples, crop_surveys)
     mgs.crop_image(samples, cut_surveys, unc=False)
     mgs.SFR(samples)
@@ -38,4 +39,4 @@ def generator(samples=M101):
     mgs.save_data(samples, save_surveys)
 
 
-# generator()
+generator()
