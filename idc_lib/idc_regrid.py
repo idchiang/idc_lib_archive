@@ -27,11 +27,15 @@ def Kernel_regrid(kernel, ps, ps_old, method='cubic'):
 
 
 def matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0):
-    ratio = 1E18 if np.nanmax(uncmap0) > 1E18 else 1.0
+    if np.nanmax(uncmap0) > 1E18:
+        ratio = 1E18
+    elif np.nanmax(uncmap0) < 1E-4:
+        ratio = 1E-4
+    else:
+        ratio = 1.0
     uncmap0 /= ratio
     rm_bad_pts = np.full_like(map0, 1)
-    rm_bad_pts[np.isnan(map0)] = 0.0
-    rm_bad_pts[np.isnan(uncmap0)] = 0.0
+    rm_bad_pts[np.isnan(map0) + np.isnan(uncmap0)] = 0.0
     # Convolve map
     map1 = convolve_fft(map0, kernel, quiet=True,
                         allow_huge=True)
@@ -42,12 +46,10 @@ def matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0):
     # Convolve uncertainty map
     uncmap1 = convolve_fft(uncmap0 ** 2, kernel, quiet=True,
                            allow_huge=True)
-    with np.errstate(invalid='ignore'):
-        uncmap1 = np.sqrt(uncmap1) * FWHM1 / FWHM2
+    uncmap1 = np.sqrt(np.abs(uncmap1)) * FWHM1 / FWHM2
     uncmap1[np.isnan(uncmap0)] = np.nan
     uncmap1[rm_bad_pts < threshold] = np.nan
     uncmap1 *= ratio
-
     map0[rm_bad_pts < threshold] = np.nan
     f1, f2 = np.nansum(map0), np.nansum(map1)
     print(" --Normalized flux variation:", round(np.abs(f1 - f2) / f1, 4))

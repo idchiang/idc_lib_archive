@@ -1605,21 +1605,42 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     del spire_nu, s_models
     #
     del spire_wl, spire250dnu, spire350dnu, spire500dnu
-    """
-    2X2: Residue Maps (AF)
-    """
+    #
     rmin = -2.0
     rmax = -1 * rmin
+    romin = -1.0
+    romax = -1 * romin
+    cmin = 1E-1
+    cmax = 1E1
     if method == '001111':
         aModel_exp5_AF = aModel_exp5_AF[:, 1:]
         aModel_exp5_FB = aModel_exp5_FB[:, 1:]
         aModel_exp5_FBT = aModel_exp5_FBT[:, 1:]
-    print('2X2: Residue Maps (AF)')
     all_ = np.array(['PACS70', 'PACS100', 'PACS160', 'SPIRE250', 'SPIRE350',
                      'SPIRE500'])
     slc = np.array([bool(int(m)) for m in method])
     titles = all_[slc]
     uncs_map = [list2bin(uncs[:, i], binlist, binmap) for i in range(nwl)]
+    size_ = (8, 12)
+    #
+    fig_c2, ax_c2 = plt.subplots(3, 1, figsize=(6, 12))
+    """
+    2X2: Residue Maps (AF)
+    """
+    print('2X2: Residue Maps (AF)')
+    achi2 = []
+    for i in range(lbl):
+        diff = aModel_exp5_AF[i] - aSED[i]
+        temp_array = np.array([np.sum(diff * acov_n1[i, :, j]) for j in
+                               range(nwl)])
+        achi2.append(np.sum(temp_array * diff))
+    achi2 = np.array(achi2) / (nwl - 3)
+    chi2_map = list2bin(achi2, binlist, binmap)
+    p = 0
+    cax = ax_c2[p].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
+                          origin='lower', cmap=cmap0, extent=extent)
+    fig_c2.colorbar(cax, ax=ax_c2[p])
+    ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' AF; ' + method)
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
     #         np.nanmax(np.append(temp[1], temp[3]))]
     # mins = [np.nanmin(np.append(temp[0], temp[2])),
@@ -1628,7 +1649,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_AF[:, i], binlist, binmap)
         residue_map = sed_map - model_map
-        fig, ax = plt.subplots(2, 2, figsize=(10, 7.5))
+        fig, ax = plt.subplots(3, 2, figsize=size_)
         p, q = 0, 0
         cax = ax[p, q].imshow(sed_map, norm=LogNorm(),
                               origin='lower', cmap=cmap0, extent=extent)
@@ -1640,15 +1661,25 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Model')
         p, q = 1, 0
+        cax = ax[p, q].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
+                              origin='lower', cmap=cmap0, extent=extent)
+        fig.colorbar(cax, ax=ax[p, q])
+        ax[p, q].set_title(r'Reduced $\chi^2$')
+        p, q = 1, 1
         cax = ax[p, q].imshow(residue_map,
                               origin='lower', cmap=cmap0, extent=extent)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue')
-        p, q = 1, 1
+        p, q = 2, 0
         cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
                               origin='lower', cmap=cmap2, extent=extent)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Uncertainty')
+        p, q = 2, 1
+        cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
+                              origin='lower', cmap=cmap2, extent=extent)
+        fig.colorbar(cax, ax=ax[p, q])
+        ax[p, q].set_title('Residue / Observation')
         fig.suptitle(titles[i] + ' (AF)')
         fig.tight_layout()
         fig.savefig('output/_2X2Residue_Map_' + titles[i] + '_AF_' + method +
@@ -1658,6 +1689,19 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     2X2: Residue Maps (FB)
     """
     print('2X2: Residue Maps (FB)')
+    achi2 = []
+    for i in range(lbl):
+        diff = aModel_exp5_AF[i] - aSED[i]
+        temp_array = np.array([np.sum(diff * acov_n1[i, :, j]) for j in
+                               range(nwl)])
+        achi2.append(np.sum(temp_array * diff))
+    achi2 = np.array(achi2) / (nwl - 2)
+    chi2_map = list2bin(achi2, binlist, binmap)
+    p = 1
+    cax = ax_c2[p].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
+                          origin='lower', cmap=cmap0, extent=extent)
+    fig_c2.colorbar(cax, ax=ax_c2[p])
+    ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' FB; ' + method)
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
     #         np.nanmax(np.append(temp[1], temp[3]))]
     # mins = [np.nanmin(np.append(temp[0], temp[2])),
@@ -1666,7 +1710,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_FB[:, i], binlist, binmap)
         residue_map = sed_map - model_map
-        fig, ax = plt.subplots(2, 2, figsize=(10, 7.5))
+        fig, ax = plt.subplots(3, 2, figsize=size_)
         p, q = 0, 0
         cax = ax[p, q].imshow(sed_map, norm=LogNorm(),
                               origin='lower', cmap=cmap0, extent=extent)
@@ -1678,15 +1722,25 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Model')
         p, q = 1, 0
+        cax = ax[p, q].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
+                              origin='lower', cmap=cmap0, extent=extent)
+        fig.colorbar(cax, ax=ax[p, q])
+        ax[p, q].set_title(r'Reduced $\chi^2$')
+        p, q = 1, 1
         cax = ax[p, q].imshow(residue_map,
                               origin='lower', cmap=cmap0, extent=extent)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue')
-        p, q = 1, 1
+        p, q = 2, 0
         cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
                               origin='lower', cmap=cmap2, extent=extent)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Uncertainty')
+        p, q = 2, 1
+        cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
+                              origin='lower', cmap=cmap2, extent=extent)
+        fig.colorbar(cax, ax=ax[p, q])
+        ax[p, q].set_title('Residue / Observation')
         fig.suptitle(titles[i] + ' (FB)')
         fig.tight_layout()
         fig.savefig('output/_2X2Residue_Map_' + titles[i] + '_FB_' + method +
@@ -1696,6 +1750,20 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     2X2: Residue Maps (FBT)
     """
     print('2X2: Residue Maps (FBT)')
+    achi2 = []
+    for i in range(lbl):
+        diff = aModel_exp5_AF[i] - aSED[i]
+        temp_array = np.array([np.sum(diff * acov_n1[i, :, j]) for j in
+                               range(nwl)])
+        achi2.append(np.sum(temp_array * diff))
+    achi2 = np.array(achi2) / (nwl - 1)
+    chi2_map = list2bin(achi2, binlist, binmap)
+    p = 2
+    cax = ax_c2[p].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
+                          origin='lower', cmap=cmap0, extent=extent)
+    fig_c2.colorbar(cax, ax=ax_c2[p])
+    ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' FBT; ' + method)
+    fig_c2.savefig('output/reduced_x2_' + method + '.png')
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
     #         np.nanmax(np.append(temp[1], temp[3]))]
     # mins = [np.nanmin(np.append(temp[0], temp[2])),
@@ -1704,7 +1772,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_FBT[:, i], binlist, binmap)
         residue_map = sed_map - model_map
-        fig, ax = plt.subplots(2, 2, figsize=(10, 7.5))
+        fig, ax = plt.subplots(3, 2, figsize=size_)
         p, q = 0, 0
         cax = ax[p, q].imshow(sed_map, norm=LogNorm(),
                               origin='lower', cmap=cmap0, extent=extent)
@@ -1716,15 +1784,25 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Model')
         p, q = 1, 0
+        cax = ax[p, q].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
+                              origin='lower', cmap=cmap0, extent=extent)
+        fig.colorbar(cax, ax=ax[p, q])
+        ax[p, q].set_title(r'Reduced $\chi^2$')
+        p, q = 1, 1
         cax = ax[p, q].imshow(residue_map,
                               origin='lower', cmap=cmap0, extent=extent)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue')
-        p, q = 1, 1
+        p, q = 2, 0
         cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
                               origin='lower', cmap=cmap2, extent=extent)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Uncertainty')
+        p, q = 2, 1
+        cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
+                              origin='lower', cmap=cmap2, extent=extent)
+        fig.colorbar(cax, ax=ax[p, q])
+        ax[p, q].set_title('Residue / Observation')
         fig.suptitle(titles[i] + ' (FBT)')
         fig.tight_layout()
         fig.savefig('output/_2X2Residue_Map_' + titles[i] + '_FBT_' + method +

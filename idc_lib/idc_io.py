@@ -12,7 +12,8 @@ from . import idc_regrid as ric
 from .gal_data import gal_data
 from .idc_math import reasonably_close as cls
 from .idc_math import Gaussian_Kernel_C1 as GK1
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
+plt.ioff()
 # plt.ion()
 col2sur = (1.0*u.M_p/u.cm**2).to(u.M_sun/u.pc**2).value
 H2HaHe = 1.36
@@ -416,10 +417,11 @@ class MGS(object):
                     rgd_image, _ = \
                         reproject_exact((self.df.loc[name][fine_survey],
                                          w_in), w_out, s_out)
+                    temp_unc = np.abs(self.df.loc[name][fine_survey +
+                                                        '_UNCMAP'])**2
                     rgd_unc, _ = \
-                        reproject_exact((self.df.loc[name][fine_survey +
-                                                           '_UNCMAP'], w_in),
-                                        w_out, s_out)
+                        reproject_exact((temp_unc, w_in), w_out, s_out)
+                    rgd_unc = np.sqrt(rgd_unc)
                     if self.df.loc[name][fine_survey + '_BITPIX'] == 32:
                         rgd_image, rgd_unc = rgd_image.astype(np.float32), \
                             rgd_unc.astype(np.float32)
@@ -567,7 +569,8 @@ class MGS(object):
                     self.df.set_value(name, survey + '_DISKMASK', t)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
-    def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18):
+    def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18, bins=20,
+                    cmap2='seismic'):
         self.THINGS_Limit = THINGS_Limit
         names = [names] if type(names) == str else names
         surveys = [surveys] if type(surveys) == str else surveys
@@ -593,6 +596,27 @@ class MGS(object):
                         uncmap[:, :, i] = \
                             self.df.loc[name][sub_surveys[i] + '_UNCMAP']
                         bkgmask = tbkgmask * (~np.isnan(data[:, :, i]))
+                        #
+                        fig, ax = plt.subplots(2, 3, figsize=(10, 7.5))
+                        if i < 2:
+                            r = 5.0
+                        else:
+                            r = 0.5
+                        ax[0, 0].hist(data[:, :, i][bkgmask], range=(-r, r),
+                                      bins=bins)
+                        ax[0, 0].set_title('Raw')
+                        cax = ax[1, 0].imshow(data[:, :, i], origin='lower',
+                                              vmax=r, vmin=-r, cmap=cmap2)
+                        fig.colorbar(cax, ax=ax[1, 0])
+                        b = np.median(data[:, :, i][bkgmask])
+                        ax[0, 1].hist(data[:, :, i][bkgmask] - b,
+                                      range=(-r, r), bins=bins)
+                        ax[0, 1].set_title('Median')
+                        cax = ax[1, 1].imshow(data[:, :, i] - b,
+                                              origin='lower', vmax=r, vmin=-r,
+                                              cmap=cmap2)
+                        fig.colorbar(cax, ax=ax[1, 1])
+                        #
                         bkg_plane, coef = \
                             self.bkg_tilted_plane(data[:, :, i], bkgmask)
                         try:
@@ -605,6 +629,18 @@ class MGS(object):
                                               sub_surveys[i] + '_BKGPLANE',
                                               coef)
                         data[:, :, i] -= bkg_plane
+                        #
+                        ax[0, 2].hist(data[:, :, i][bkgmask], range=(-r, r),
+                                      bins=bins)
+                        ax[0, 2].set_title('Tilted Plane')
+                        cax = ax[1, 2].imshow(data[:, :, i],
+                                              origin='lower', vmax=r, vmin=-r,
+                                              cmap=cmap2)
+                        fig.colorbar(cax, ax=ax[1, 2])
+                        fig.savefig('output/170901_BKGtest/' + sub_surveys[i] +
+                                    '.png')
+                        plt.close(fig)
+                        #
                     bkgmask = tbkgmask * (~np.sum(np.isnan(data), axis=2,
                                                   dtype=bool))
                     bkgcov = np.cov(data[bkgmask].T)
@@ -629,10 +665,30 @@ class MGS(object):
                     assert self.df.loc[name][survey + '_RGD']
                     data = self.df.loc[name][survey]
                     bkgmask = tbkgmask * (~np.isnan(data))
+                    #
+                    d = {'GALEX_FUV': 0.002, 'HERACLES': 1.0, 'IRAC_3.6': 0.15,
+                         'MIPS_24': 0.1, 'THINGS': 1E18}
+                    r = d[survey]
+                    fig, ax = plt.subplots(2, 3, figsize=(10, 7.5))
+                    ax[0, 0].hist(data[bkgmask], range=(-r, r), bins=bins)
+                    ax[0, 0].set_title('Raw')
+                    cax = ax[0, 0].imshow(data, origin='lower', vmax=r,
+                                          vmin=-r, cmap=cmap2)
+                    fig.colorbar(cax, ax=ax[0, 0])
+                    ax[0, 1].hist(data[bkgmask] - np.median(data[bkgmask]),
+                                  range=(-r, r), bins=bins)
+                    ax[0, 1].set_title('Median')  
+                    #
                     if bkgmask.sum():
                         bkg_plane, coef = self.bkg_tilted_plane(data, bkgmask)
                     else:
                         bkg_plane, coef = np.zeros_like(data), [np.nan] * 3
+                    #
+                    ax[0, 2].hist(data[bkgmask], range=(-r, r), bins=bins)
+                    ax[0, 2].set_title('Tilted Plane')  
+                    fig.savefig('output/170901_BKGtest/' + survey + '.png')
+                    plt.close(fig)
+                    #
                     try:
                         self.df.set_value(name, survey + '_BKGPLANE', coef)
                     except ValueError:

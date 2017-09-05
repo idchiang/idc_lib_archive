@@ -1,4 +1,6 @@
 from idc_lib.idc_io import MGS
+import matplotlib.pyplot as plt
+import numpy as np
 """
 all_objects = ['IC2574', 'NGC0628', 'NGC0925', 'NGC2841', 'NGC2976', 'NGC3077',
                'NGC3184', 'NGC3198', 'NGC3351', 'NGC3521', 'NGC3627',
@@ -23,21 +25,14 @@ save_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
                 'RADIUS_KPC', 'SFR', 'SMSD', 'TOTAL_GAS', 'DIST_MPC', 'PA_RAD',
                 'cosINCL', 'R25_KPC', 'SPIRE_500_PS']
 
+THINGS_Limit = 1.0E18
+samples = ['NGC5457']
+mgs = MGS(samples, all_surveys)
+mgs.add_kernel(all_kernels, 'SPIRE_500')
+mgs.matching_PSF(samples, fine_surveys, 'SPIRE_500')
+mgs.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
 
-def generator(samples=M101):
-    mgs = MGS(samples, all_surveys)
-    return mgs
-    mgs.add_kernel(all_kernels, 'SPIRE_500')
-    mgs.matching_PSF(samples, fine_surveys, 'SPIRE_500')
-    mgs.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
-    mgs.bkg_removal(samples, bkg_rm_surveys)
-    return mgs
-    mgs.crop_image(samples, crop_surveys)
-    mgs.crop_image(samples, cut_surveys, unc=False)
-    mgs.SFR(samples)
-    mgs.SMSD(samples)
-    mgs.total_gas(samples)
-    mgs.save_data(samples, save_surveys)
+galex = mgs.df.loc['NGC5457']['GALEX_FUV']
+tbkgmask = ~(mgs.df.loc['NGC5457']['GALEX_FUV'] > THINGS_Limit)
+radius = mgs.df.loc['NGC5457']['RADIUS_KPC']
 
-
-mgs = generator()
