@@ -8,17 +8,16 @@ SSST = ['NGC0628']  # SSST for "Super Small Scale Test"
 """
 M101 = ['NGC5457']  # Currently focusing on NGC5457
 all_surveys = ['THINGS', 'SPIRE_500', 'SPIRE_350', 'SPIRE_250',
-               'PACS_160', 'PACS_100', 'HERACLES', 'MIPS_24', 'GALEX_FUV',
-               'IRAC_3.6']
+               'PACS_160', 'PACS_100', 'HERACLES', 'MIPS_24', 'IRAC_3.6',
+               'GALEX_FUV']
 all_kernels = ['Gauss_25', 'SPIRE_350', 'SPIRE_250', 'PACS_160', 'PACS_100',
                'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
 fine_surveys = ['THINGS', 'SPIRE_350', 'SPIRE_250', 'PACS_160',
                 'PACS_100', 'HERACLES', 'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
+cut_surveys = ['RADIUS_KPC']
+cov_surveys = ['HERSCHEL_011111', 'HERSCHEL_001111']
 crop_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
                 'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
-cut_surveys = ['RADIUS_KPC']
-bkg_rm_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
-                  'IRAC_3.6', 'MIPS_24', 'GALEX_FUV']
 save_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
                 'RADIUS_KPC', 'SFR', 'SMSD', 'TOTAL_GAS', 'DIST_MPC', 'PA_RAD',
                 'cosINCL', 'R25_KPC', 'SPIRE_500_PS']
@@ -26,12 +25,10 @@ save_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
 
 def generator(samples=M101):
     mgs = MGS(samples, all_surveys)
-    return mgs
     mgs.add_kernel(all_kernels, 'SPIRE_500')
     mgs.matching_PSF(samples, fine_surveys, 'SPIRE_500')
     mgs.WCS_congrid(samples, fine_surveys, 'SPIRE_500')
-    mgs.bkg_removal(samples, bkg_rm_surveys)
-    return mgs
+    mgs.covariance_matrix(samples, cov_surveys)
     mgs.crop_image(samples, crop_surveys)
     mgs.crop_image(samples, cut_surveys, unc=False)
     mgs.SFR(samples)
@@ -40,4 +37,5 @@ def generator(samples=M101):
     mgs.save_data(samples, save_surveys)
 
 
-mgs = generator()
+if __name__ == "__main__":
+    generator()

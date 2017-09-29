@@ -27,4 +27,5 @@ def fitting(samples=M101, cov_mode=True, fixed_beta=None, method='011111'):
         fdd(sample, fixed_beta=fixed_beta, method=method)
 
 
-# fitting()
+if __name__ == "__main__":
+    fitting()

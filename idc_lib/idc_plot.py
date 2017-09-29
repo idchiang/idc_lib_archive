@@ -8,6 +8,8 @@ from time import clock
 import astropy.units as u
 from astropy.constants import c, h, k_B
 from .gal_data import gal_data
+from astropy.io import fits
+from astropy.wcs import WCS
 
 
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
@@ -271,8 +273,8 @@ def read_dust_file(name='NGC5457', rbin=51, dbin=1000, tbin=30, SigmaDoff=2.,
     for i in range(2):
         for j in range(3 - fixed_beta):
             fig.colorbar(cax[i, j], ax=ax[i, j])
-            ax[i, j].set_xlabel('r25', size=16)
-            ax[i, j].set_ylabel('r25', size=16)
+            ax[i, j].set_xlabel('RA', size=16)
+            ax[i, j].set_ylabel('Dec', size=16)
             ax[i, j].set_xticklabels(ax[i, j].get_xticks(), fontsize=16)
             ax[i, j].set_yticklabels(ax[i, j].get_yticks(), fontsize=16)
     fig.tight_layout()
@@ -289,8 +291,8 @@ def read_dust_file(name='NGC5457', rbin=51, dbin=1000, tbin=30, SigmaDoff=2.,
         cax[p, q] = ax[p, q].imshow(Model_d_SED[i], origin='lower',
                                     cmap=cmap2, vmin=0, vmax=2, extent=extent)
         fig.colorbar(cax[p, q], ax=ax[p, q])
-        ax[p, q].set_xlabel('r25')
-        ax[p, q].set_ylabel('r25')
+        ax[p, q].set_xlabel('RA')
+        ax[p, q].set_ylabel('Dec')
         ax[p, q].set_title(titles[i], size=20)
     fig.tight_layout()
     with PdfPages('output/' + name + '_Fitting_Divided_by_Observed.pdf') as pp:
@@ -603,16 +605,16 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         grp = hf[name]
         R25 = float(np.array(grp['R25_KPC']))
         aRadius /= R25
-        ubRadius = np.array(grp['RADIUS_KPC']) / R25
         Radius = list2bin(aRadius, binlist, binmap)
         # H2 = map2bin(np.array(grp['HERACLES']), binlist, binmap)
         SFR = map2bin(np.array(grp['SFR']), binlist, binmap)
         SMSD = map2bin(np.array(grp['SMSD']), binlist, binmap)
         bkgcov = np.array(grp['HERSCHEL_' + method + '_BKGCOV'])
+    filename = 'data/PROCESSED/NGC5457/SPIRE_500_RGD.fits'
+    _, hdr = fits.getdata(filename, 0, header=True)
+    wcs = WCS(hdr, naxis=2)
     # Calculating Image scale
     lbl = len(binlist)
-    extent = np.array([-ubRadius[:, 0].max(), ubRadius[:, -1].max(),
-                       -ubRadius[0, :].max(), ubRadius[-1, :].max()])
     uncs = np.array([np.sqrt((np.linalg.inv(acov_n1[i])).diagonal())
                      for i in range(lbl)])
 
@@ -679,7 +681,8 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     """
     print('2X2: dust surface density & error maps for varying & fixed beta')
     rows, columns = 2, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(14, 12))
+    fig, ax = plt.subplots(rows, columns, figsize=(14, 12),
+                           subplot_kw={'projection': wcs})
     temp = [SigmaD,
             SigmaD_dexerr,
             SigmaD_fb,
@@ -695,16 +698,16 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     for i in range(rows * columns):
         p, q = i // columns, i % columns
         cax = ax[p, q].imshow(temp[i], origin='lower', cmap=cmap0,
-                              extent=extent, vmax=maxs[q], vmin=mins[q],
+                              vmax=maxs[q], vmin=mins[q],
                               norm=LogNorm())
         ax[p, q].set_title(titles[i], size=20)
         if p == 1:
-            ax[p, q].set_xlabel('r25', size=16)
+            ax[p, q].set_xlabel('RA', size=16)
             ax[p, q].set_xticklabels(ax[p, q].get_xticks(), fontsize=16)
         else:
             ax[p, q].set_xticklabels([], fontsize=16)
         if q == 0:
-            ax[p, q].set_ylabel('r25', size=16)
+            ax[p, q].set_ylabel('Dec', size=16)
             ax[p, q].set_yticklabels(ax[p, q].get_yticks(), fontsize=16)
         else:
             ax[p, q].set_yticklabels([], fontsize=16)
@@ -718,7 +721,8 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     """
     print('2X2: dust temperature & error maps for varying & fixed beta')
     rows, columns = 2, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(14, 12))
+    fig, ax = plt.subplots(rows, columns, figsize=(14, 12),
+                           subplot_kw={'projection': wcs})
     temp = [T,
             T_err,
             T_fb,
@@ -734,15 +738,15 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     for i in range(rows * columns):
         p, q = i // columns, i % columns
         cax = ax[p, q].imshow(temp[i], origin='lower', cmap=cmap0,
-                              extent=extent, vmax=maxs[q], vmin=mins[q])
+                              vmax=maxs[q], vmin=mins[q])
         ax[p, q].set_title(titles[i], size=20)
         if p == 1:
-            ax[p, q].set_xlabel('r25', size=16)
+            ax[p, q].set_xlabel('RA', size=16)
             ax[p, q].set_xticklabels(ax[p, q].get_xticks(), fontsize=16)
         else:
             ax[p, q].set_xticklabels([], fontsize=16)
         if q == 0:
-            ax[p, q].set_ylabel('r25', size=16)
+            ax[p, q].set_ylabel('Dec', size=16)
             ax[p, q].set_yticklabels(ax[p, q].get_yticks(), fontsize=16)
         else:
             ax[p, q].set_yticklabels([], fontsize=16)
@@ -862,15 +866,15 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     print('1X2: Fitted vs. predicted temperature: residue map and radial',
           'profile')
     rows, columns = 1, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(12, 6))
+    fig, ax = plt.subplots(rows, columns, figsize=(12, 6),
+                           subplot_kw={'projection': wcs})
     titles = ['Residue map',
               'Radial profile']
-    cax = ax[0].imshow(T_FBT - T_fb, origin='lower', cmap=cmap0,
-                       extent=extent)
+    cax = ax[0].imshow(T_FBT - T_fb, origin='lower', cmap=cmap0)
     ax[0].set_title(titles[0], size=20)
-    ax[0].set_xlabel('r25', size=16)
+    ax[0].set_xlabel('RA', size=16)
     ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=16)
-    ax[0].set_ylabel('r25', size=16)
+    ax[0].set_ylabel('Dec', size=16)
     ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=16)
     fig.colorbar(cax, ax=ax[0])
     R_Tfb, Tfb_profile = simple_profile(T_fb, Radius, 100, SigmaGas)
@@ -893,7 +897,8 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     print('1X2: dust surface density & error map for fixed beta &',
           'fixed temperature')
     rows, columns = 1, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(12, 6))
+    fig, ax = plt.subplots(rows, columns, figsize=(12, 6),
+                           subplot_kw={'projection': wcs})
     temp = [SigmaD_FBT,
             SigmaD_dexerr_FBT]
     titles = [r'Dust map ($M_\odot/pc^2$)',
@@ -901,14 +906,13 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     for i in range(rows * columns):
         p, q = i // columns, i % columns
         cax = ax[p].imshow(temp[i], origin='lower', cmap=cmap0,
-                           extent=extent,
                            norm=LogNorm())
         ax[p].set_title(titles[i], size=20)
         if p == 1:
-            ax[p].set_xlabel('r25', size=16)
+            ax[p].set_xlabel('RA', size=16)
             ax[p].set_xticklabels(ax[p].get_xticks(), fontsize=16)
         if q == 0:
-            ax[p].set_ylabel('r25', size=16)
+            ax[p].set_ylabel('Dec', size=16)
             ax[p].set_yticklabels(ax[p].get_yticks(), fontsize=16)
         else:
             ax[p].set_yticklabels([], fontsize=16)
@@ -1445,7 +1449,6 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         grp = hf[name]
         R25 = float(np.array(grp['R25_KPC']))
         aRadius /= R25
-        ubRadius = np.array(grp['RADIUS_KPC']) / R25
         # Radius = list2bin(aRadius, binlist, binmap)
         # H2 = map2bin(np.array(grp['HERACLES']), binlist, binmap)
         # SFR = map2bin(np.array(grp['SFR']), binlist, binmap)
@@ -1453,8 +1456,6 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         # bkgcov = np.array(grp['HERSCHEL_011111_BKGCOV'])
     # Calculating Image scale
     lbl = len(binlist)
-    extent = np.array([-ubRadius[:, 0].max(), ubRadius[:, -1].max(),
-                       -ubRadius[0, :].max(), ubRadius[-1, :].max()])
     uncs = np.array([np.sqrt((np.linalg.inv(acov_n1[i])).diagonal())
                      for i in range(lbl)])
 
@@ -1521,7 +1522,10 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         # SigmaDs_FBT = 10**np.array(hf['logsigmas'])
         # aPDFs_FBT = np.array(hf['PDF'])
         pass
-
+    filename = 'data/PROCESSED/NGC5457/SPIRE_500_RGD.fits'
+    _, hdr = fits.getdata(filename, 0, header=True)
+    wcs = WCS(hdr, naxis=2)
+    #
     aModel_exp5_AF = np.zeros([len(aSED), 5])
     aModel_exp5_FB = np.zeros([len(aSED), 5])
     aModel_exp5_FBT = np.zeros([len(aSED), 5])
@@ -1623,7 +1627,8 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     uncs_map = [list2bin(uncs[:, i], binlist, binmap) for i in range(nwl)]
     size_ = (8, 12)
     #
-    fig_c2, ax_c2 = plt.subplots(3, 1, figsize=(6, 12))
+    fig_c2, ax_c2 = plt.subplots(3, 1, figsize=(6, 12),
+                                 subplot_kw={'projection': wcs})
     """
     2X2: Residue Maps (AF)
     """
@@ -1638,9 +1643,13 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     chi2_map = list2bin(achi2, binlist, binmap)
     p = 0
     cax = ax_c2[p].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
-                          origin='lower', cmap=cmap0, extent=extent)
+                          origin='lower', cmap=cmap0)
     fig_c2.colorbar(cax, ax=ax_c2[p])
     ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' AF; ' + method)
+    vmins = [max(min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_AF[:, i])),
+                 0) for i in range(nwl)]
+    vmaxs = [max(np.nanmax(aSED[:, i]), np.nanmax(aModel_exp5_AF[:, i]))
+             for i in range(nwl)]
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
     #         np.nanmax(np.append(temp[1], temp[3]))]
     # mins = [np.nanmin(np.append(temp[0], temp[2])),
@@ -1649,35 +1658,38 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_AF[:, i], binlist, binmap)
         residue_map = sed_map - model_map
-        fig, ax = plt.subplots(3, 2, figsize=size_)
+        fig, ax = plt.subplots(3, 2, figsize=size_,
+                               subplot_kw={'projection': wcs})
         p, q = 0, 0
         cax = ax[p, q].imshow(sed_map, norm=LogNorm(),
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0,
+                              vmin=vmins[i], vmax=vmaxs[i])
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Observed')
         p, q = 0, 1
         cax = ax[p, q].imshow(model_map, norm=LogNorm(),
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0,
+                              vmin=vmins[i], vmax=vmaxs[i])
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Model')
         p, q = 1, 0
         cax = ax[p, q].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title(r'Reduced $\chi^2$')
         p, q = 1, 1
         cax = ax[p, q].imshow(residue_map,
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue')
         p, q = 2, 0
         cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
-                              origin='lower', cmap=cmap2, extent=extent)
+                              origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Uncertainty')
         p, q = 2, 1
         cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
-                              origin='lower', cmap=cmap2, extent=extent)
+                              origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Observation')
         fig.suptitle(titles[i] + ' (AF)')
@@ -1699,9 +1711,13 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     chi2_map = list2bin(achi2, binlist, binmap)
     p = 1
     cax = ax_c2[p].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
-                          origin='lower', cmap=cmap0, extent=extent)
+                          origin='lower', cmap=cmap0)
     fig_c2.colorbar(cax, ax=ax_c2[p])
     ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' FB; ' + method)
+    vmins = [min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_FB[:, i]))
+             for i in range(nwl)]
+    vmaxs = [max(np.nanmax(aSED[:, i]), np.nanmax(aModel_exp5_FB[:, i]))
+             for i in range(nwl)]
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
     #         np.nanmax(np.append(temp[1], temp[3]))]
     # mins = [np.nanmin(np.append(temp[0], temp[2])),
@@ -1710,35 +1726,38 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_FB[:, i], binlist, binmap)
         residue_map = sed_map - model_map
-        fig, ax = plt.subplots(3, 2, figsize=size_)
+        fig, ax = plt.subplots(3, 2, figsize=size_,
+                               subplot_kw={'projection': wcs})
         p, q = 0, 0
         cax = ax[p, q].imshow(sed_map, norm=LogNorm(),
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0,
+                              vmin=vmins[i], vmax=vmaxs[i])
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Observed')
         p, q = 0, 1
         cax = ax[p, q].imshow(model_map, norm=LogNorm(),
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0,
+                              vmin=vmins[i], vmax=vmaxs[i])
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Model')
         p, q = 1, 0
         cax = ax[p, q].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title(r'Reduced $\chi^2$')
         p, q = 1, 1
         cax = ax[p, q].imshow(residue_map,
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue')
         p, q = 2, 0
         cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
-                              origin='lower', cmap=cmap2, extent=extent)
+                              origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Uncertainty')
         p, q = 2, 1
         cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
-                              origin='lower', cmap=cmap2, extent=extent)
+                              origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Observation')
         fig.suptitle(titles[i] + ' (FB)')
@@ -1760,10 +1779,14 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     chi2_map = list2bin(achi2, binlist, binmap)
     p = 2
     cax = ax_c2[p].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
-                          origin='lower', cmap=cmap0, extent=extent)
+                          origin='lower', cmap=cmap0)
     fig_c2.colorbar(cax, ax=ax_c2[p])
     ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' FBT; ' + method)
     fig_c2.savefig('output/reduced_x2_' + method + '.png')
+    vmins = [min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_FBT[:, i]))
+             for i in range(nwl)]
+    vmaxs = [max(np.nanmax(aSED[:, i]), np.nanmax(aModel_exp5_FBT[:, i]))
+             for i in range(nwl)]
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
     #         np.nanmax(np.append(temp[1], temp[3]))]
     # mins = [np.nanmin(np.append(temp[0], temp[2])),
@@ -1772,35 +1795,38 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_FBT[:, i], binlist, binmap)
         residue_map = sed_map - model_map
-        fig, ax = plt.subplots(3, 2, figsize=size_)
+        fig, ax = plt.subplots(3, 2, figsize=size_,
+                               subplot_kw={'projection': wcs})
         p, q = 0, 0
         cax = ax[p, q].imshow(sed_map, norm=LogNorm(),
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0,
+                              vmin=vmins[i], vmax=vmaxs[i])
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Observed')
         p, q = 0, 1
         cax = ax[p, q].imshow(model_map, norm=LogNorm(),
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0,
+                              vmin=vmins[i], vmax=vmaxs[i])
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Model')
         p, q = 1, 0
         cax = ax[p, q].imshow(chi2_map, norm=LogNorm(), vmin=cmin, vmax=cmax,
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title(r'Reduced $\chi^2$')
         p, q = 1, 1
         cax = ax[p, q].imshow(residue_map,
-                              origin='lower', cmap=cmap0, extent=extent)
+                              origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue')
         p, q = 2, 0
         cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
-                              origin='lower', cmap=cmap2, extent=extent)
+                              origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Uncertainty')
         p, q = 2, 1
         cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
-                              origin='lower', cmap=cmap2, extent=extent)
+                              origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title('Residue / Observation')
         fig.suptitle(titles[i] + ' (FBT)')

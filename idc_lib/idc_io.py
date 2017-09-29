@@ -5,7 +5,9 @@ from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord, Angle
 from sklearn import linear_model
+# from scipy.stats import norm
 from reproject import reproject_exact
+from reproject import reproject_interp
 from h5py import File
 from time import clock
 from . import idc_regrid as ric
@@ -20,13 +22,13 @@ H2HaHe = 1.36
 
 
 class MGS(object):
-    def __init__(self, names=None, surveys=None):
+    def __init__(self, names=[], surveys=[]):
         """ Initialize the class; Can take optional initial inputs """
         self.df = pd.DataFrame()
         self.kernels = pd.DataFrame()
+        self.new = np.full(len(names), np.nan, object)
         if names and surveys:
             self.add_galaxies(names, surveys)
-        self.new = np.full(len(self.df), np.nan, object)
 
     def add_galaxies(self, names, surveys):
         """ Import fits files """
@@ -38,7 +40,8 @@ class MGS(object):
         for name in names:
             self.add_galaxy(name, surveys)
 
-    def add_galaxy(self, name, surveys, filenames=None, uncfn=None):
+    def add_galaxy(self, name, surveys, filenames=None, uncfn=None,
+                   GALEX_NAN=True):
         """  Import fits files from one galaxy """
         print('Importing', len(surveys), 'fits files of', name + '...')
         tic = clock()
@@ -131,8 +134,12 @@ class MGS(object):
                     uncfn = 'data/KINGFISH/' + name1 + name2 + \
                             '_S500_110_SSS_111_Model_SurfBr_Mdust_unc.fits.gz'
                 elif survey[:5] == 'GALEX':
-                    filename = 'data/GALEX/' + name1 + '_' + name2 + \
-                        '_I_' + survey[6:] + '_d2009.fits.gz'
+                    if GALEX_NAN:
+                        filename = 'data/GALEX/' + name1 + '_' + name2 + \
+                            '_I_' + survey[6:] + '_d2009_learn.fits'
+                    else:
+                        filename = 'data/GALEX/' + name1 + '_' + name2 + \
+                            '_I_' + survey[6:] + '_d2009.fits.gz'
                 elif survey[:4] == 'MIPS':
                     filename = 'data/MIPS/' + name1 + '_' + name2 + \
                         '_I_MIPS' + survey[5:] + '_d2009.fits.gz'
@@ -175,23 +182,6 @@ class MGS(object):
                         temp_s['TBMIN']
                     uncdata = data * 0.05
                     hdr['BUNIT'] = '1/cm^2'
-                    """
-                    import matplotlib.pyplot as plt
-                    fig, ax = plt.subplots()
-                    temp = np.log10(data)
-                    temp = temp[~np.isnan(temp)]
-                    temp = temp[~np.isinf(temp)]
-                    ax.hist(temp, bins=20)
-                    ax.set_yscale('log')
-                    fig.savefig('output/0814_hist.png')
-                    fig, ax = plt.subplots()
-                    temp = np.log10(data)
-                    temp[np.isinf(temp)] = np.nan
-                    CS = ax.contour(temp)
-                    plt.clabel(CS, fontsize=9, inline=1)
-                    fig.savefig('output/NHI_contour.png')
-                    plt.close('all')
-                    """
                 elif survey == 'HERACLES':
                     # HERACLES: Raw data in K*km/s. Change to
                     # surface density M_\odot/pc^2
@@ -218,9 +208,8 @@ class MGS(object):
             elif survey == 'IRAC_3.6':
                 data *= 0.91
                 uncdata *= 0.91
-
             w = WCS(hdr, naxis=2)
-            s[survey + '_WCS'], s[survey] = w, data
+            s[survey + '_WCS'] = w
             s[survey + '_UNCMAP'] = uncdata
             ctr = np.array(data.shape) // 2
             ps = np.zeros(2)
@@ -234,18 +223,61 @@ class MGS(object):
             if survey in ['PACS_160', 'PACS_100']:
                 # Converting Jy/pixel to MJy/sr
                 data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
-            elif survey[:5] == 'GALEX':
-                data *= 1.073E-10 * (np.pi / 3600 / 180)**(-2) / ps[0] / ps[1]
+            elif (survey[:5] == 'GALEX'):
+                if not GALEX_NAN:
+                    data *= 1.073E-10 * (np.pi / 3600 / 180)**(-2) / ps[0] / \
+                        ps[1]
+                    xcm, ycm = float(hdr['CRPIX1']), float(hdr['CRPIX1'])
+                    coords = np.array(np.meshgrid(np.arange(data.shape[1]),
+                                                  np.arange(data.shape[0]))
+                                      ).T.astype(float)
+                    # 1470 pixels from center to radius
+                    # 2000 from center to right-most boarder
+                    # But the initial max is at the corners...
+                    zeroCount = 0
+                    ii = 0
+                    while(True):
+                        ii += 1
+                        radii = np.sqrt((coords[:, :, 0] - xcm)**2 +
+                                        (coords[:, :, 1] - ycm)**2)
+                        r = np.max(radii) / np.sqrt(2)
+                        with np.errstate(invalid='ignore'):
+                            rs = np.linspace(0, r, 3000)
+                            for i in range(len(rs))[::-1]:
+                                if np.sum(data[radii > rs[i]] > 0) > 0:
+                                    r = rs[i]
+                                    currentCount = np.sum(radii > rs[i + 1])
+                                    if currentCount > zeroCount:
+                                        zeroCount = currentCount
+                                        currentMask = radii > rs[i + 1]
+                                    break
+                            DeltaX = (np.mean(coords[:, :, 0][(radii > r) *
+                                              (data > 0)]) - xcm) / r
+                            DeltaY = (np.mean(coords[:, :, 1][(radii > r) *
+                                              (data > 0)]) - ycm) / r
+                            if (DeltaX**2 + DeltaY**2 < 0.4**2) | \
+                                    (currentCount < zeroCount):
+                                break
+                            xcm += DeltaX
+                            ycm += DeltaY
+                            r *= 1.05
+                    data[currentMask] = np.nan
+                if (survey == 'GALEX_FUV') & (name == 'NGC5457'):
+                    data[2109:2237, 3175:3426] = np.nan
             s[survey + '_PS'] = ps
             s[survey + '_HDR'] = hdr
             s[survey + '_CVL'] = True if survey == 'SPIRE_500' else False
             s[survey + '_RGD'] = True if survey == 'SPIRE_500' else False
             s[survey + '_BITPIX'] = abs(int(hdr['BITPIX']))
+            s[survey] = data
 
         s['RADIUS_KPC'] = self.dp_radius(s)
         s['RADIUS_KPC_RGD'] = True
         # Update DataFrame
         self.df = self.df.append(s)
+        for survey in surveys:
+            if survey not in ['THINGS', 'HERACLES']:
+                self.bkg_removal(name, survey)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def add_kernel(self, name1s, name2):
@@ -277,12 +309,12 @@ class MGS(object):
                                     set_index(['NAME1', 'NAME2']))
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
-    def dp_radius(self, s):
+    def dp_radius(self, s, survey='SPIRE_500'):
         """ Calculate the radius at each point """
-        shape = np.array(s['SPIRE_500'].shape)
+        shape = np.array(s[survey].shape)
         cosPA, sinPA = np.cos(s['PA_RAD']), np.sin(s['PA_RAD'])
         cosINCL = s['cosINCL']
-        w = s['SPIRE_500_WCS']
+        w = s[survey + '_WCS']
         xcm, ycm = s['RA_RAD'], s['DEC_RAD']
         dp_coords = np.zeros([shape[0], shape[1], 2])
         # Original coordinate is (y, x)
@@ -301,11 +333,18 @@ class MGS(object):
         # Now, dp_coords is (dx, dy) in the original coordinate
         # cosPA*dy-sinPA*dx is new y
         # cosPA*dx+sinPA*dy is new x
-        return np.sqrt((cosPA * dp_coords[:, :, 1] +
-                        sinPA * dp_coords[:, :, 0])**2 +
-                       ((cosPA * dp_coords[:, :, 0] -
-                         sinPA * dp_coords[:, :, 1]) / cosINCL)**2) * \
-            s['DIST_MPC'] * 1.0E3  # Radius in kpc
+        if survey[:5] == 'GALEX':
+            return np.sqrt((cosPA * dp_coords[:, :, 1] +
+                            sinPA * dp_coords[:, :, 0])**2 +
+                           ((cosPA * dp_coords[:, :, 0] -
+                             sinPA * dp_coords[:, :, 1]))**2) * \
+                s['DIST_MPC'] * 1.0E3  # Radius in kpc
+        else:
+            return np.sqrt((cosPA * dp_coords[:, :, 1] +
+                            sinPA * dp_coords[:, :, 0])**2 +
+                           ((cosPA * dp_coords[:, :, 0] -
+                             sinPA * dp_coords[:, :, 1]) / cosINCL)**2) * \
+                s['DIST_MPC'] * 1.0E3  # Radius in kpc
 
     def matching_PSF(self, names, survey1s, survey2):
         """
@@ -508,7 +547,7 @@ class MGS(object):
                 self.df.set_value(name, 'TOTAL_GAS_UNCMAP', total_gas_unc)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
-    def BDR_cal(self, names):
+    def BDR_cal(self, names, course_survey='SPIRE_500'):
         names = [names] if type(names) == str else names
         print(' --Calculating boundary cutting of', len(names),
               'galaxies from THINGS...')
@@ -532,6 +571,13 @@ class MGS(object):
             except ValueError:
                 self.df['BDR'] = self.new
                 self.df.set_value(name, 'BDR', lc)
+            hdr_in = self.df.loc[name][course_survey + '_HDR']
+            hdr_in['CRPIX1'] -= lc[1, 0]
+            hdr_in['CRPIX2'] -= lc[0, 0]
+            fn = 'data/PROCESSED/' + name + '/' + course_survey + '_RGD.fits'
+            hdu = fits.PrimaryHDU(self.df.loc[name][course_survey],
+                                  header=hdr_in)
+            hdu.writeto(fn)
         print("   --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
         return lc
 
@@ -569,8 +615,7 @@ class MGS(object):
                     self.df.set_value(name, survey + '_DISKMASK', t)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
-    def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18, bins=20,
-                    cmap2='seismic'):
+    def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18, bdr=0.5):
         self.THINGS_Limit = THINGS_Limit
         names = [names] if type(names) == str else names
         surveys = [surveys] if type(surveys) == str else surveys
@@ -579,68 +624,117 @@ class MGS(object):
         tic = clock()
         for name in names:
             with np.errstate(invalid='ignore'):
-                tbkgmask = ~(self.df.loc[name]['THINGS'] > THINGS_Limit)
+                disk = (self.df.loc[name]['THINGS'] > THINGS_Limit).astype(int)
+                tw = self.df.loc[name]['THINGS_WCS']
+            for survey in surveys:
+                data = self.df.loc[name][survey]
+                s_out = self.df.loc[name][survey].shape
+                w_out = self.df.loc[name][survey + '_WCS']
+                #
+                # Defining background region
+                rgd_disk, _ = reproject_interp((disk, tw), w_out, s_out)
+                rgd_disk[np.isnan(rgd_disk)] = 0
+                rgd_disk[rgd_disk > bdr] = 1
+                bkg_mask = (~(rgd_disk.astype(int).astype(bool))) * \
+                    (~np.isnan(data))
+                """
+                #
+                # Selecting regions for plotting local histogram
+                bkg_mask_copy = np.copy(bkg_mask).astype(int)
+                bkg_mask_copy -= 1
+                p1s, p0s = np.meshgrid(np.arange(bkg_mask.shape[1]),
+                                       np.arange(bkg_mask.shape[0]))
+                p0s, p1s = p0s[bkg_mask], p1s[bkg_mask]
+                local_masks = []
+                num_of_locals = 4
+                width = int(np.sqrt((np.sum(bkg_mask) / 20)))
+                ii = 0
+                while(ii < num_of_locals):
+                    jj = np.random.randint(0, len(p0s))
+                    p0, p1 = p0s[jj], p1s[jj]
+                    if (p0 < bkg_mask.shape[0] - width) & \
+                            (p1 < bkg_mask.shape[1] - width):
+                        temp_local_mask = np.zeros(bkg_mask.shape, dtype=bool)
+                        for jj in range(p0, p0 + width):
+                            for kk in range(p1, p1 + width):
+                                temp_local_mask[jj, kk] = True
+                        if np.sum(bkg_mask_copy[temp_local_mask]) == 0:
+                            local_masks.append(temp_local_mask)
+                            ii += 1
+                            bkg_mask_copy[temp_local_mask] = ii
+                """
+                """
+                #
+                # Definition of some plotting parameters
+                rs = {'GALEX_FUV': (-0.001, 0.008), 'IRAC_3.6': (-0.1, 0.2),
+                      'MIPS_24': (-0.05, 0.15), 'PACS_100': (-5.0, 5.0),
+                      'PACS_160': (-5.0, 5.0), 'SPIRE_250': (-0.70, 0.90),
+                      'SPIRE_350': (-0.70, 0.90), 'SPIRE_500': (-0.70, 0.90)}
+                bins = 30
+                """
+                if survey[:5] != 'GALEX':
+                    #
+                    # tilted plane new
+                    bkg_plane, coef_ = self.bkg_tilted_plane(data, bkg_mask)
+                    for i in range(5):
+                        full_diff = data - bkg_plane
+                        full_AD = np.abs(full_diff -
+                                         np.nanmedian(full_diff[bkg_mask]))
+                        MAD = np.nanmedian(full_AD[bkg_mask])
+                        with np.errstate(invalid='ignore'):
+                            MAD_mask = (full_AD <= 3 * MAD) * bkg_mask
+                        bkg_plane, coef_ = \
+                            self.bkg_tilted_plane(data, MAD_mask)
+                    data -= bkg_plane
+                else:
+                    #
+                    # GALEX: just use the mean
+                    coef_ = [np.nan] * 3
+                    data -= np.nanmean(data[bkg_mask])
+                self.df.set_value(name, survey, data)
+                try:
+                    self.df.set_value(name, survey + '_BKG_COEF', coef_)
+                except ValueError:
+                    self.df[survey + '_BKG_COEF'] = self.new
+                    self.df.set_value(name, survey + '_BKG_COEF', coef_)
+            print(' --' + name, 'in', survey + ':', bkg_mask.sum(),
+                  'effective background pixels.')
+        print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
+
+    def bkg_tilted_plane(self, image, bkgmask):
+        m, n = image.shape
+        q, p = np.meshgrid(np.arange(n), np.arange(m))
+        #
+        regr = linear_model.LinearRegression()
+        DataX = np.array([p[bkgmask], q[bkgmask]]).T
+        regr.fit(DataX, image[bkgmask])
+        bkg_plane = \
+            regr.predict(np.array([p.flatten(), q.flatten()]).T).reshape(m, n)
+        coef = np.append(regr.coef_, regr.intercept_)
+        return bkg_plane, coef
+
+    def covariance_matrix(self, names, surveys):
+        names = [names] if type(names) == str else names
+        surveys = [surveys] if type(surveys) == str else surveys
+        print('Calculating covariance matrix of ', len(names), 'galaxies in',
+              len(surveys))
+        tic = clock()
+        for name in names:
+            with np.errstate(invalid='ignore'):
+                tbkgmask = ~(self.df.loc[name]['THINGS'] > self.THINGS_Limit)
             for survey in surveys:
                 if survey[:9] == 'HERSCHEL_':
                     all_ = np.array(['PACS_70', 'PACS_100', 'PACS_160',
                                      'SPIRE_250', 'SPIRE_350', 'SPIRE_500'])
                     slc = np.array([bool(int(s)) for s in survey[9:]])
                     sub_surveys = all_[slc]
-                    temp = self.df.loc[name]['THINGS'].shape
-                    data = np.zeros([temp[0], temp[1], len(sub_surveys)])
-                    del temp
+                    s = self.df.loc[name]['THINGS'].shape
+                    data = np.zeros([s[0], s[1], len(sub_surveys)])
                     uncmap = np.empty_like(data)
                     for i in range(len(sub_surveys)):
-                        assert self.df.loc[name][sub_surveys[i] + '_RGD']
                         data[:, :, i] = self.df.loc[name][sub_surveys[i]]
                         uncmap[:, :, i] = \
                             self.df.loc[name][sub_surveys[i] + '_UNCMAP']
-                        bkgmask = tbkgmask * (~np.isnan(data[:, :, i]))
-                        #
-                        fig, ax = plt.subplots(2, 3, figsize=(10, 7.5))
-                        if i < 2:
-                            r = 5.0
-                        else:
-                            r = 0.5
-                        ax[0, 0].hist(data[:, :, i][bkgmask], range=(-r, r),
-                                      bins=bins)
-                        ax[0, 0].set_title('Raw')
-                        cax = ax[1, 0].imshow(data[:, :, i], origin='lower',
-                                              vmax=r, vmin=-r, cmap=cmap2)
-                        fig.colorbar(cax, ax=ax[1, 0])
-                        b = np.median(data[:, :, i][bkgmask])
-                        ax[0, 1].hist(data[:, :, i][bkgmask] - b,
-                                      range=(-r, r), bins=bins)
-                        ax[0, 1].set_title('Median')
-                        cax = ax[1, 1].imshow(data[:, :, i] - b,
-                                              origin='lower', vmax=r, vmin=-r,
-                                              cmap=cmap2)
-                        fig.colorbar(cax, ax=ax[1, 1])
-                        #
-                        bkg_plane, coef = \
-                            self.bkg_tilted_plane(data[:, :, i], bkgmask)
-                        try:
-                            self.df.set_value(name,
-                                              sub_surveys[i] + '_BKGPLANE',
-                                              coef)
-                        except ValueError:
-                            self.df[sub_surveys[i] + '_BKGPLANE'] = self.new
-                            self.df.set_value(name,
-                                              sub_surveys[i] + '_BKGPLANE',
-                                              coef)
-                        data[:, :, i] -= bkg_plane
-                        #
-                        ax[0, 2].hist(data[:, :, i][bkgmask], range=(-r, r),
-                                      bins=bins)
-                        ax[0, 2].set_title('Tilted Plane')
-                        cax = ax[1, 2].imshow(data[:, :, i],
-                                              origin='lower', vmax=r, vmin=-r,
-                                              cmap=cmap2)
-                        fig.colorbar(cax, ax=ax[1, 2])
-                        fig.savefig('output/170901_BKGtest/' + sub_surveys[i] +
-                                    '.png')
-                        plt.close(fig)
-                        #
                     bkgmask = tbkgmask * (~np.sum(np.isnan(data), axis=2,
                                                   dtype=bool))
                     bkgcov = np.cov(data[bkgmask].T)
@@ -661,58 +755,9 @@ class MGS(object):
                         self.df.set_value(name, survey + '_UNCMAP', uncmap)
                         self.df.set_value(name, survey + '_BKGCOV', bkgcov)
                         self.df.set_value(name, survey + '_DISKMASK', ~bkgmask)
-                else:
-                    assert self.df.loc[name][survey + '_RGD']
-                    data = self.df.loc[name][survey]
-                    bkgmask = tbkgmask * (~np.isnan(data))
-                    #
-                    d = {'GALEX_FUV': 0.002, 'HERACLES': 1.0, 'IRAC_3.6': 0.15,
-                         'MIPS_24': 0.1, 'THINGS': 1E18}
-                    r = d[survey]
-                    fig, ax = plt.subplots(2, 3, figsize=(10, 7.5))
-                    ax[0, 0].hist(data[bkgmask], range=(-r, r), bins=bins)
-                    ax[0, 0].set_title('Raw')
-                    cax = ax[0, 0].imshow(data, origin='lower', vmax=r,
-                                          vmin=-r, cmap=cmap2)
-                    fig.colorbar(cax, ax=ax[0, 0])
-                    ax[0, 1].hist(data[bkgmask] - np.median(data[bkgmask]),
-                                  range=(-r, r), bins=bins)
-                    ax[0, 1].set_title('Median')  
-                    #
-                    if bkgmask.sum():
-                        bkg_plane, coef = self.bkg_tilted_plane(data, bkgmask)
-                    else:
-                        bkg_plane, coef = np.zeros_like(data), [np.nan] * 3
-                    #
-                    ax[0, 2].hist(data[bkgmask], range=(-r, r), bins=bins)
-                    ax[0, 2].set_title('Tilted Plane')  
-                    fig.savefig('output/170901_BKGtest/' + survey + '.png')
-                    plt.close(fig)
-                    #
-                    try:
-                        self.df.set_value(name, survey + '_BKGPLANE', coef)
-                    except ValueError:
-                        self.df[survey + '_BKGPLANE'] = self.new
-                        self.df.set_value(name, survey + '_BKGPLANE', coef)
-                    data -= bkg_plane
-                    self.df.set_value(name, survey, data)
                 print(' --' + name, 'in', survey + ':', np.sum(bkgmask),
                       'effective background pixels.')
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
-
-    def bkg_tilted_plane(self, image, bkgmask):
-        m, n = image.shape
-        q, p = np.meshgrid(np.arange(n), np.arange(m))
-        #
-        regr = linear_model.LinearRegression()
-        DataX = np.array([p[bkgmask], q[bkgmask]]).T
-        regr.fit(DataX, image[bkgmask])
-        bkg_plane = \
-            regr.predict(np.array([p.flatten(), q.flatten()]).T).reshape(m, n)
-        coef = np.append(regr.coef_, regr.intercept_)
-        # plt.figure()
-        # plt.imshow(bkg_plane, origin='lower')
-        return bkg_plane, coef
 
     def save_data(self, names, surveys):
         """

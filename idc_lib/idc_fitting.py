@@ -578,11 +578,12 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0,
     print("Datasets saved.")
 
 
-def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
+def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, err_bdr=0.3, rbin=51,
                           dbin=250, cmap1='Reds', Tmin=5, method='011111'):
     ndim = 2
     with File('output/Dust_data_FB_' + name + '_' + method + '.h5', 'a') as hf:
         aT = np.array(hf['Dust_temperature'])
+        aT_err = np.array(hf['Dust_temperature_err'])
     with File('output/Voronoi_data.h5', 'r') as hf:
         grp = hf[name + '_' + method]
         binlist = np.array(grp['BINLIST'])
@@ -592,10 +593,10 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
         acovn1 = np.array(grp['Herschel_covariance_matrix'])
         nwl = len(acovn1[0])
         # inv_sigma2s = np.array(grp['Herschel_variance'])
-        aRadius = np.array(grp['Radius_avg'])
+        # aRadius = np.array(grp['Radius_avg'])
     with File('output/RGD_data.h5', 'r') as hf:
         grp = hf[name]
-        R25 = float(np.array(grp['R25_KPC']))
+        # R25 = float(np.array(grp['R25_KPC']))
         with np.errstate(invalid='ignore', divide='ignore'):
             logSFR = np.log10(map2bin(np.array(grp['SFR']), binlist, binmap))
             logSMSD = np.log10(map2bin(np.array(grp['SMSD']), binlist, binmap))
@@ -605,11 +606,15 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, r_bdr=0.8, rbin=51,
                          range(len(binlist))])
     print('Calculating predicted temperature...')
     tic = clock()
-    mask = (aRadius < r_bdr * R25) * (~np.isnan(alogSFR + alogSMSD + aT)) * \
-        (~np.isinf(alogSFR + alogSMSD + aT))
+    mask = ((aT_err / aT) < err_bdr) * \
+        (~np.isnan(alogSFR + alogSMSD + aT + aT_err)) * \
+        (~np.isinf(alogSFR + alogSMSD + aT + aT_err))
+    a_one_over_sigma2 = (aT_err / aT)**(-2)
+    print('Total number of bins:', mask.size)
+    print('Total number of good fits:', mask.sum())
     regr = linear_model.LinearRegression()
     DataX = np.array([alogSFR, alogSMSD]).T
-    regr.fit(DataX[mask], aT[mask])
+    regr.fit(DataX[mask], aT[mask], sample_weight=a_one_over_sigma2[mask])
     print(regr.coef_, regr.intercept_)
     nanmask = np.isnan(alogSFR + alogSMSD + aT) + \
         np.isinf(alogSFR + alogSMSD + aT)
