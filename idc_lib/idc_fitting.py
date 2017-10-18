@@ -165,7 +165,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0,
     # d --> diskmasked, len() = sum(diskmask);
     # b --> binned, len() = number of binned area
     try:
-        with File('output/Voronoi_data.h5', 'r') as hf:
+        with File('output/Voronoi_data_' + method + '.h5', 'r') as hf:
             grp = hf[name + '_' + method]
             binlist = np.array(grp['BINLIST'])
             binmap = np.array(grp['BINMAP'])
@@ -298,7 +298,7 @@ def fit_dust_density(name, cov_mode=True, fixed_beta=True, beta_f=2.0,
             calerr2 = calerr_matrix2 * sed_avg[-1]**2
             # Finally everything for variance is here...
             inv_sigma2s.append(1 / (bkg2_avg + calerr2 + unc2_avg))
-        with File('output/Voronoi_data.h5', 'a') as hf:
+        with File('output/Voronoi_data_' + method + '.h5', 'a') as hf:
             grp = hf.create_group(name + '_' + method)
             grp.create_dataset('BINLIST', data=binlist)
             grp.create_dataset('BINMAP', data=binmap)
@@ -584,7 +584,7 @@ def fit_dust_density_Tmap(name='NGC5457', beta_f=2.0, err_bdr=0.3, rbin=51,
     with File('output/Dust_data_FB_' + name + '_' + method + '.h5', 'a') as hf:
         aT = np.array(hf['Dust_temperature'])
         aT_err = np.array(hf['Dust_temperature_err'])
-    with File('output/Voronoi_data.h5', 'r') as hf:
+    with File('output/Voronoi_data_' + method + '.h5', 'r') as hf:
         grp = hf[name + '_' + method]
         binlist = np.array(grp['BINLIST'])
         binmap = np.array(grp['BINMAP'])

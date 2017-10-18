@@ -8,6 +8,7 @@ from time import clock
 import astropy.units as u
 from astropy.constants import c, h, k_B
 from .gal_data import gal_data
+from .z0mg_RSRF import z0mg_RSRF
 from astropy.io import fits
 from astropy.wcs import WCS
 
@@ -57,12 +58,12 @@ def B(T, freq=nu):
                 ).to(u.Jy).value * 1E-6
 
 
-def model(wl, sigma, T, beta, freq=nu):
+def model(wl, SigmaD, T, beta):
     """Return fitted SED in MJy"""
-    const = 2.0891E-4
     kappa160 = 9.6 * np.pi
-    return const * kappa160 * (160.0 / wl)**beta * \
-        sigma * B(T * u.K, freq)
+    const = 2.0891E-4 * kappa160
+    freq = (c / wl / u.um).to(u.Hz)
+    return const * (160.0 / wl)**beta * SigmaD * B(T * u.K, freq)
 
 
 def BPL_DGR(x, XCO):
@@ -583,354 +584,19 @@ def read_dust_file(name='NGC5457', rbin=51, dbin=1000, tbin=30, SigmaDoff=2.,
         plt.close('all')
 
 
-def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
-                    Toff=20, dr25=0.025, method='011111',
-                    cmap0='gist_heat', cmap1='Greys', cmap2='seismic',
-                    cmap3='Reds'):
-    plt.close('all')
-    plt.ioff()
-    wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
-    nwl = method.count('1')
-    print('Loading data...\n')
-    with File('output/Voronoi_data.h5', 'r') as hf:
-        grp = hf[name + '_' + method]
-        binlist = np.array(grp['BINLIST'])
-        binmap = np.array(grp['BINMAP'])
-        aGas = np.array(grp['GAS_AVG'])
-        SigmaGas = list2bin(aGas, binlist, binmap)
-        aRadius = np.array(grp['Radius_avg'])
-        aSED = np.array(grp['Herschel_SED'])
-        acov_n1 = np.array(grp['Herschel_covariance_matrix'])
-    with File('output/RGD_data.h5', 'r') as hf:
-        grp = hf[name]
-        R25 = float(np.array(grp['R25_KPC']))
-        aRadius /= R25
-        Radius = list2bin(aRadius, binlist, binmap)
-        # H2 = map2bin(np.array(grp['HERACLES']), binlist, binmap)
-        SFR = map2bin(np.array(grp['SFR']), binlist, binmap)
-        SMSD = map2bin(np.array(grp['SMSD']), binlist, binmap)
-        bkgcov = np.array(grp['HERSCHEL_' + method + '_BKGCOV'])
-    filename = 'data/PROCESSED/NGC5457/SPIRE_500_RGD.fits'
-    _, hdr = fits.getdata(filename, 0, header=True)
-    wcs = WCS(hdr, naxis=2)
-    # Calculating Image scale
-    lbl = len(binlist)
-    uncs = np.array([np.sqrt((np.linalg.inv(acov_n1[i])).diagonal())
-                     for i in range(lbl)])
-
-    fn_AF = 'output/Dust_data_AF_' + name + '_' + method + '.h5'
-    with File(fn_AF, 'r') as hf:
-        SigmaD = list2bin(10**np.array(hf['Dust_surface_density_log']),
-                          binlist, binmap)
-        # with np.errstate(invalid='ignore'):
-        #     DGR = SigmaD / SigmaGas
-        SigmaD_dexerr = \
-            list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
-                     binmap)
-        T = list2bin(np.array(hf['Dust_temperature']), binlist, binmap)
-        T_err = list2bin(np.array(hf['Dust_temperature_err']), binlist, binmap)
-        # Beta = list2bin(np.array(hf['beta']), binlist, binmap)
-        # Beta_err = list2bin(np.array(hf['beta_err']), binlist, binmap)
-        # SigmaDs = 10**np.array(hf['logsigmas'])
-        # aPDFs = np.array(hf['PDF'])
-        Ts = np.array(hf['Ts'])
-        a_T_PDFs = np.array(hf['PDF_T'])
-        # aModel = np.array(hf['Best_fit_model'])
-
-    fn_FB = 'output/Dust_data_FB_' + name + '_' + method + '.h5'
-    with File(fn_FB, 'r') as hf:
-        aSigmaD_fb = 10**np.array(hf['Dust_surface_density_log'])
-        SigmaD_fb = list2bin(aSigmaD_fb, binlist, binmap)
-        # with np.errstate(invalid='ignore'):
-        #     DGR_fb = SigmaD_fb / SigmaGas
-        SigmaD_dexerr_fb = \
-            list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
-                     binmap)
-        aT_fb = np.array(hf['Dust_temperature'])
-        T_fb = list2bin(aT_fb, binlist, binmap)
-        T_err_fb = list2bin(np.array(hf['Dust_temperature_err']), binlist,
-                            binmap)
-        aBeta_fb = np.array(hf['beta'])
-        Beta_fb = list2bin(aBeta_fb, binlist, binmap)
-        SigmaDs_fb = 10**np.array(hf['logsigmas'])
-        # aPDFs_fb = np.array(hf['PDF'])
-        Ts_fb = np.array(hf['Ts'])
-        a_T_PDFs_fb = np.array(hf['PDF_T'])
-        # aModel = np.array(hf['Best_fit_model'])
-
-    fn_FBT = 'output/Dust_data_FBT_' + name + '_' + method + '.h5'
-    with File(fn_FBT, 'r') as hf:
-        aSigmaD_FBT = 10**np.array(hf['Dust_surface_density_log'])
-        SigmaD_FBT = list2bin(aSigmaD_FBT, binlist, binmap)
-        # with np.errstate(invalid='ignore'):
-        #     DGR_FBT = SigmaD_FBT / SigmaGas
-        SigmaD_dexerr_FBT = \
-            list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
-                     binmap)
-        aT_FBT = np.array(hf['Dust_temperature'])
-        T_FBT = list2bin(aT_FBT, binlist, binmap)
-        # T_err_FBT = list2bin(np.array(hf['Dust_temperature_err']), binlist,
-        #                       binmap)
-        aBeta_FBT = np.array(hf['beta'])
-        # Beta_FBT = list2bin(np.array(hf['beta']), binlist, binmap)
-        SigmaDs_FBT = 10**np.array(hf['logsigmas'])
-        aPDFs_FBT = np.array(hf['PDF'])
-
+def pdf_profiles(aGas, aRadius, aPDFs, SigmaDs, binmap, binlist, rbin,
+                 dbin, cmap1, name, R25, fitting_method):
     """
-    2X2: dust surface density & error maps for varying & fixed beta
+    1X1: DGR profile
     """
-    print('2X2: dust surface density & error maps for varying & fixed beta')
-    rows, columns = 2, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(14, 12),
-                           subplot_kw={'projection': wcs})
-    temp = [SigmaD,
-            SigmaD_dexerr,
-            SigmaD_fb,
-            SigmaD_dexerr_fb]
-    titles = [r'Dust map ($M_\odot/pc^2$)',
-              'Error map (dex)',
-              r'Dust map ($\beta=2$) ($M_\odot/pc^2$)',
-              r'Error map ($\beta=2$) (dex)']
-    maxs = [np.nanmax(np.append(temp[0], temp[2])),
-            np.nanmax(np.append(temp[1], temp[3]))]
-    mins = [np.nanmin(np.append(temp[0], temp[2])),
-            np.nanmin(np.append(temp[1], temp[3]))]
-    for i in range(rows * columns):
-        p, q = i // columns, i % columns
-        cax = ax[p, q].imshow(temp[i], origin='lower', cmap=cmap0,
-                              vmax=maxs[q], vmin=mins[q],
-                              norm=LogNorm())
-        ax[p, q].set_title(titles[i], size=20)
-        if p == 1:
-            ax[p, q].set_xlabel('RA', size=16)
-            ax[p, q].set_xticklabels(ax[p, q].get_xticks(), fontsize=16)
-        else:
-            ax[p, q].set_xticklabels([], fontsize=16)
-        if q == 0:
-            ax[p, q].set_ylabel('Dec', size=16)
-            ax[p, q].set_yticklabels(ax[p, q].get_yticks(), fontsize=16)
-        else:
-            ax[p, q].set_yticklabels([], fontsize=16)
-        fig.colorbar(cax, ax=ax[p, q])
-    fig.tight_layout()
-    with PdfPages('output/_2X2Dust.pdf') as pp:
-        pp.savefig(fig)
-    del temp, titles, p, q, cax, fig, ax, rows, columns, maxs, mins
-    """
-    2X2: dust temperature & error maps for varying & fixed beta
-    """
-    print('2X2: dust temperature & error maps for varying & fixed beta')
-    rows, columns = 2, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(14, 12),
-                           subplot_kw={'projection': wcs})
-    temp = [T,
-            T_err,
-            T_fb,
-            T_err_fb]
-    titles = [r'Temperature map ($K$)',
-              'Error map',
-              r'Temperature map ($\beta=2$) ($K$)',
-              r'Error map ($\beta=2$)']
-    maxs = [np.nanmax(np.append(temp[0], temp[2])),
-            np.nanmax(np.append(temp[1], temp[3]))]
-    mins = [np.nanmin(np.append(temp[0], temp[2])),
-            np.nanmin(np.append(temp[1], temp[3]))]
-    for i in range(rows * columns):
-        p, q = i // columns, i % columns
-        cax = ax[p, q].imshow(temp[i], origin='lower', cmap=cmap0,
-                              vmax=maxs[q], vmin=mins[q])
-        ax[p, q].set_title(titles[i], size=20)
-        if p == 1:
-            ax[p, q].set_xlabel('RA', size=16)
-            ax[p, q].set_xticklabels(ax[p, q].get_xticks(), fontsize=16)
-        else:
-            ax[p, q].set_xticklabels([], fontsize=16)
-        if q == 0:
-            ax[p, q].set_ylabel('Dec', size=16)
-            ax[p, q].set_yticklabels(ax[p, q].get_yticks(), fontsize=16)
-        else:
-            ax[p, q].set_yticklabels([], fontsize=16)
-        fig.colorbar(cax, ax=ax[p, q])
-    fig.tight_layout()
-    with PdfPages('output/_2X2Temperature.pdf') as pp:
-        pp.savefig(fig)
-    del temp, titles, p, q, cax, fig, ax, rows, columns, maxs, mins
-    """
-    3X1: Temperature gradient & Sigma_SFR + Sigma_* profile
-    """
-    print('3X1: Temperature gradient & Sigma_SFR + Sigma_* profile')
-    r, t, w = np.array([]), np.array([]), np.array([])
-    for i in range(lbl):
-        temp_GM = aGas[i] * (binmap == binlist[i]).sum()
-        mask = a_T_PDFs[i] > a_T_PDFs[i].max() / 1000
-        temp_T, temp_P = Ts[mask], a_T_PDFs[i][mask]
-        temp_P = temp_P / np.sum(temp_P) * temp_GM
-        r = np.append(r, [aRadius[i]] * len(temp_T))
-        for j in range(len(temp_T)):
-            t = np.append(t, temp_T[j])
-            w = np.append(w, temp_P[j])
-    nanmask = np.isnan(r + t + w)
-    r, t, w = r[~nanmask], t[~nanmask], w[~nanmask]
-    rbins = np.linspace(np.min(r), np.max(r), rbin)
-    tbins = np.linspace(np.min(t), np.max(t), tbin)
-    # Counting hist2d
-    counts, _, _ = np.histogram2d(r, t, bins=(rbins, tbins), weights=w)
-    del r, t, w
-    # Fixing temperature
-    r, t, w = np.array([]), np.array([]), np.array([])
-    for i in range(lbl):
-        temp_GM = aGas[i] * (binmap == binlist[i]).sum()
-        mask = a_T_PDFs_fb[i] > a_T_PDFs_fb[i].max() / 1000
-        temp_T, temp_P = Ts_fb[mask], a_T_PDFs_fb[i][mask]
-        temp_P = temp_P / np.sum(temp_P) * temp_GM
-        r = np.append(r, [aRadius[i]] * len(temp_T))
-        for j in range(len(temp_T)):
-            t = np.append(t, temp_T[j])
-            w = np.append(w, temp_P[j])
-    nanmask = np.isnan(r + t + w)
-    r, t, w = r[~nanmask], t[~nanmask], w[~nanmask]
-    tbins_fb = np.linspace(np.min(t), np.max(t), tbin)
-    # Counting hist2d
-    counts_fb, _, _ = np.histogram2d(r, t, bins=(rbins, tbins_fb), weights=w)
-    del r, t, w
-    counts, counts_fb = counts.T, counts_fb.T
-    tbins2 = (tbins[:-1] + tbins[1:]) / 2
-    tbins2_fb = (tbins[:-1] + tbins[1:]) / 2
-    rbins2 = (rbins[:-1] + rbins[1:]) / 2
-    T_Exp, T_Exp_fb = np.array([]), np.array([])
-    n_zeromask = np.full(counts.shape[1], True, dtype=bool)
-    n_zeromask_fb = np.full(counts_fb.shape[1], True, dtype=bool)
-    # Calculating PDFs at each radial bin...
-    assert counts.shape[1] == counts_fb.shape[1]
-    for i in range(counts.shape[1]):
-        if np.sum(counts[:, i]) > 0:
-            counts[:, i] /= np.sum(counts[:, i])
-            T_Exp = np.append(T_Exp, np.sum(counts[:, i] * tbins2))
-        else:
-            n_zeromask[i] = False
-    for i in range(counts_fb.shape[1]):
-        if np.sum(counts_fb[:, i]) > 0:
-            counts_fb[:, i] /= np.sum(counts_fb[:, i])
-            T_Exp_fb = np.append(T_Exp_fb, np.sum(counts_fb[:, i] * tbins2_fb))
-        else:
-            n_zeromask_fb[i] = False
-    R_SFR, SFR_profile = simple_profile(SFR, Radius, 100, SigmaGas)
-    R_SMSD, SMSD_profile = simple_profile(SMSD, Radius, 100, SigmaGas)
-    #
-    rows, columns = 3, 1
-    fig, ax = plt.subplots(rows, columns, figsize=(10, 16))
-    titles = ['Temperature radial profile',
-              r'Temperature radial profile ($\beta=2$)',
-              r'$\Sigma_{SFR}$ and $\Sigma_*$ radial profile']
-    maxs = [np.nanmax(np.append(rbins2, np.append(R_SFR, R_SMSD)))]
-    mins = [np.nanmin(np.append(rbins2, np.append(R_SFR, R_SMSD)))]
-    temp1 = [tbins2, tbins2_fb]
-    temp2 = [counts, counts_fb]
-    temp3 = [T_Exp, T_Exp_fb]
-    temp4 = [n_zeromask, n_zeromask_fb]
-    del tbins2, tbins2_fb, counts, counts_fb, T_Exp, T_Exp_fb
-    for i in range(2):
-        ax[i].pcolormesh(rbins2, temp1[i], temp2[i], norm=LogNorm(),
-                         cmap=cmap3, vmin=1E-3)
-        ax[i].plot(rbins2[temp4[i]], temp3[i], 'b', label='Expectation')
-        ax[i].set_title(titles[i])
-        ax[i].set_xlabel(r'Radius ($R_{25}$)', size=16)
-        ax[i].set_ylabel(r'Temperature ($K$)', size=16)
-        ax[i].set_xlim([mins[0], maxs[0]])
-        ax[i].set_xticklabels(ax[i].get_xticks(), fontsize=12)
-        ax[i].set_yticklabels(ax[i].get_yticks(), fontsize=12)
-        ax[i].legend(fontsize=14)
-    del temp1, temp2, temp3, temp4
-    # IMWH
-    ax[2].semilogy(R_SFR, SFR_profile, 'k')
-    ax[2].set_xlabel(r'Radius ($R25$)', size=16)
-    ax[2].set_ylabel(r'$\Sigma_{SFR}$ ($M_\odot kpc^{-2} yr^{-1}$)',
-                     size=16, color='k')
-    ax[2].tick_params('y', colors='k')
-    ax[2].set_xticklabels(ax[2].get_xticks(), fontsize=12)
-    ax[2].set_yticklabels(ax[2].get_yticks(), fontsize=12)
-    ax2 = ax[2].twinx()
-    ax2.semilogy(R_SMSD, SMSD_profile, c='b')
-    ax2.set_ylabel(r'$\Sigma_*$ ($M_\odot pc^{-2}$)', size=16, color='b')
-    ax2.tick_params('y', colors='b')
-    ax2.set_xlim([0, rbins2[n_zeromask].max()])
-    ax2.set_yticklabels(ax2.get_xticks(), fontsize=12)
-    ax2.set_title(titles[2])
-    fig.tight_layout()
-    with PdfPages('output/_3X1TempRP.pdf') as pp:
-        pp.savefig(fig)
-    del R_SFR, SFR_profile, R_SMSD, SMSD_profile, fig, ax, ax2
-    """
-    1X2: Fitted vs. predicted temperature: residue map and radial profile
-    """
-    print('1X2: Fitted vs. predicted temperature: residue map and radial',
-          'profile')
-    rows, columns = 1, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(12, 6),
-                           subplot_kw={'projection': wcs})
-    titles = ['Residue map',
-              'Radial profile']
-    cax = ax[0].imshow(T_FBT - T_fb, origin='lower', cmap=cmap0)
-    ax[0].set_title(titles[0], size=20)
-    ax[0].set_xlabel('RA', size=16)
-    ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=16)
-    ax[0].set_ylabel('Dec', size=16)
-    ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=16)
-    fig.colorbar(cax, ax=ax[0])
-    R_Tfb, Tfb_profile = simple_profile(T_fb, Radius, 100, SigmaGas)
-    R_TFBT, TFBT_profile = simple_profile(T_FBT, Radius, 100, SigmaGas)
-    ax[1].plot(R_Tfb, Tfb_profile, label=r'$\beta=2$')
-    ax[1].plot(R_TFBT, TFBT_profile, label=r'$\beta=2$, pred temperature')
-    ax[1].set_xlabel(r'Radius ($R25$)', size=16)
-    ax[1].set_ylabel(r'Temperature ($K$)', size=16)
-    ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=12)
-    ax[1].set_yticklabels(ax[1].get_yticks(), fontsize=12)
-    ax[1].legend(fontsize=14)
-    fig.tight_layout()
-    with PdfPages('output/_1X2Tempfb_FBT.pdf') as pp:
-        pp.savefig(fig)
-    del titles, cax, fig, ax, rows, columns, R_Tfb, Tfb_profile, R_TFBT, \
-        TFBT_profile
-    """
-    1X2: dust surface density & error map for fixed beta & fixed temperature
-    """
-    print('1X2: dust surface density & error map for fixed beta &',
-          'fixed temperature')
-    rows, columns = 1, 2
-    fig, ax = plt.subplots(rows, columns, figsize=(12, 6),
-                           subplot_kw={'projection': wcs})
-    temp = [SigmaD_FBT,
-            SigmaD_dexerr_FBT]
-    titles = [r'Dust map ($M_\odot/pc^2$)',
-              r'Error map (dex)']
-    for i in range(rows * columns):
-        p, q = i // columns, i % columns
-        cax = ax[p].imshow(temp[i], origin='lower', cmap=cmap0,
-                           norm=LogNorm())
-        ax[p].set_title(titles[i], size=20)
-        if p == 1:
-            ax[p].set_xlabel('RA', size=16)
-            ax[p].set_xticklabels(ax[p].get_xticks(), fontsize=16)
-        if q == 0:
-            ax[p].set_ylabel('Dec', size=16)
-            ax[p].set_yticklabels(ax[p].get_yticks(), fontsize=16)
-        else:
-            ax[p].set_yticklabels([], fontsize=16)
-        fig.colorbar(cax, ax=ax[p])
-    fig.tight_layout()
-    with PdfPages('output/_1X2Dust_FBT.pdf') as pp:
-        pp.savefig(fig)
-    del temp, titles, p, q, cax, fig, ax, rows, columns
-    """
-    1X1: DGR profile FBT
-    """
-    print('1X1: DGR profile FBT')
+    print('1X1: DGR profile')
+    lbl = len(aGas)
     r = d = w = np.array([])  # radius, dgr, weight
     for i in range(lbl):
         temp_G = aGas[i]
         temp_R = aRadius[i]
-        mask = aPDFs_FBT[i] > aPDFs_FBT[i].max() / 1000
-        temp_DGR, temp_P = SigmaDs_FBT[mask] / temp_G, aPDFs_FBT[i][mask]
+        mask = aPDFs[i] > aPDFs[i].max() / 1000
+        temp_DGR, temp_P = SigmaDs[mask] / temp_G, aPDFs[i][mask]
         temp_P = temp_P / np.sum(temp_P) * temp_G * \
             (binmap == binlist[i]).sum()
         r = np.append(r, [temp_R] * len(temp_P))
@@ -978,7 +644,7 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     plt.xticks(fontsize=12)
     plt.yticks(fontsize=12)
     plt.tight_layout()
-    with PdfPages('output/_1X1DGR_PDF.pdf') as pp:
+    with PdfPages('output/_1X1DGR_PDF_' + fitting_method + '.pdf') as pp:
         pp.savefig(fig)
     """
     1X1: DGR vs. metallicity with other papers
@@ -1016,254 +682,562 @@ def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     ax.legend(fontsize=16)
     ax.set_xticklabels(ax.get_xticks(), fontsize=12)
     ax.set_yticklabels(ax.get_yticks(), fontsize=12)
-    with PdfPages('output/_1X1DGR_Z_Models.pdf') as pp:
+    with PdfPages('output/_1X1DGR_Z_Models_' + fitting_method + '.pdf') as pp:
         pp.savefig(fig)
     del counts, counts2, rbins, dbins, rbins2, dbins2, DGR_Median
+
+
+def plots_for_paper(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
+                    Toff=20, dr25=0.025, method='011111',
+                    cmap0='gist_heat', cmap1='Greys', cmap2='seismic',
+                    cmap3='Reds'):
+    plt.close('all')
+    plt.ioff()
+    wl_complete = np.linspace(1, 800, 1000)
+    if method == '011111':
+        bands = ['PACS_100', 'PACS_160', 'SPIRE_250', 'SPIRE_350', 'SPIRE_500']
+        wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
+    elif method == '001111':
+        bands = ['PACS_160', 'SPIRE_250', 'SPIRE_350', 'SPIRE_500']
+        wl = np.array([160.0, 250.0, 350.0, 500.0])
+    nwl = method.count('1')
+    print('Loading share data...\n')
+    with File('output/Voronoi_data_' + method + '.h5', 'r') as hf:
+        grp = hf[name + '_' + method]
+        binlist = np.array(grp['BINLIST'])
+        binmap = np.array(grp['BINMAP'])
+        aGas = np.array(grp['GAS_AVG'])
+        SigmaGas = list2bin(aGas, binlist, binmap)
+        aRadius = np.array(grp['Radius_avg'])
+        aSED = np.array(grp['Herschel_SED'])
+        acov_n1 = np.array(grp['Herschel_covariance_matrix'])
+    with File('output/RGD_data.h5', 'r') as hf:
+        grp = hf[name]
+        R25 = float(np.array(grp['R25_KPC']))
+        aRadius /= R25
+        Radius = list2bin(aRadius, binlist, binmap)
+        # H2 = map2bin(np.array(grp['HERACLES']), binlist, binmap)
+        SFR = map2bin(np.array(grp['SFR']), binlist, binmap)
+        SMSD = map2bin(np.array(grp['SMSD']), binlist, binmap)
+        bkgcov = np.array(grp['HERSCHEL_' + method + '_BKGCOV'])
+    filename = 'data/PROCESSED/NGC5457/SPIRE_500_RGD.fits'
+    _, hdr = fits.getdata(filename, 0, header=True)
+    wcs = WCS(hdr, naxis=2)
+    # Calculating Image scale
+    lbl = len(binlist)
+    uncs = np.array([np.sqrt((np.linalg.inv(acov_n1[i])).diagonal())
+                     for i in range(lbl)])
+    #
+    hf2 = File('output/chi2s', 'a')
+    #
+    print('Loading AF data...\n')
+    fn_AF = 'output/Dust_data_AF_' + name + '_' + method + '.h5'
+    with File(fn_AF, 'r') as hf:
+        alogSigmaD_AF = np.array(hf['Dust_surface_density_log'])
+        logSigmaD_AF = list2bin(alogSigmaD_AF, binlist, binmap)
+        # with np.errstate(invalid='ignore'):
+        #     DGR = SigmaD / SigmaGas
+        SigmaD_dexerr_AF = \
+            list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
+                     binmap)
+        aT_AF = np.array(hf['Dust_temperature'])
+        T_AF = list2bin(aT_AF, binlist, binmap)
+        T_err_AF = list2bin(np.array(hf['Dust_temperature_err']), binlist,
+                            binmap)
+        aBeta_AF = np.array(hf['beta'])
+        Beta_AF = list2bin(aBeta_AF, binlist, binmap)
+        Beta_err_AF = list2bin(np.array(hf['beta_err']), binlist, binmap)
+        SigmaDs_AF = 10**np.array(hf['logsigmas'])
+        aPDFs_AF = np.array(hf['PDF'])
+        Ts_AF = np.array(hf['Ts'])
+        a_T_PDFs_AF = np.array(hf['PDF_T'])
+    #
+    try:
+        chi2_AF = np.array(hf2['chi2_AF_' + method])
+    except KeyError:
+        chi2_AF = np.empty_like(T_AF)
+        chi2_AF[np.isnan(T_AF)] = np.nan
+        for i in range(len(binlist)):
+            cov_n1 = acov_n1[i]
+            best_fit_sed = model(wl_complete, 10**alogSigmaD_AF[i], aT_AF[i],
+                                 aBeta_AF[i])
+            best_fit_model = z0mg_RSRF(wl_complete, best_fit_sed, bands)
+            diff = best_fit_model - aSED[i]
+            temp_matrix = np.array([np.sum(diff * cov_n1[:, j])
+                                    for j in range(5)])
+            chi2 = np.sum(temp_matrix * diff)
+            chi2_AF[binmap == binlist[i]] = chi2
+        chi2_AF /= (nwl - 3)
+        hf2.create_dataset('chi2_AF_' + method, data=chi2_AF)
+    #
+    print('Loading FB data...\n')
+    fn_FB = 'output/Dust_data_FB_' + name + '_' + method + '.h5'
+    with File(fn_FB, 'r') as hf:
+        alogSigmaD_FB = np.array(hf['Dust_surface_density_log'])
+        SigmaD_FB = list2bin(10**alogSigmaD_FB, binlist, binmap)
+        logSigmaD_FB = list2bin(np.array(hf['Dust_surface_density_log']),
+                                binlist, binmap)
+        # with np.errstate(invalid='ignore'):
+        #     DGR_FB = SigmaD_FB / SigmaGas
+        SigmaD_dexerr_FB = \
+            list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
+                     binmap)
+        aT_FB = np.array(hf['Dust_temperature'])
+        T_FB = list2bin(aT_FB, binlist, binmap)
+        T_err_FB = list2bin(np.array(hf['Dust_temperature_err']), binlist,
+                            binmap)
+        aBeta_FB = np.array(hf['beta'])
+        Beta_FB = list2bin(aBeta_FB, binlist, binmap)
+        SigmaDs_FB = 10**np.array(hf['logsigmas'])
+        aPDFs_FB = np.array(hf['PDF'])
+        Ts_FB = np.array(hf['Ts'])
+        a_T_PDFs_FB = np.array(hf['PDF_T'])
+    #
+    try:
+        chi2_FB = np.array(hf2['chi2_FB_' + method])
+    except KeyError:
+        chi2_FB = np.empty_like(T_FB)
+        chi2_FB[np.isnan(T_FB)] = np.nan
+        for i in range(len(binlist)):
+            cov_n1 = acov_n1[i]
+            best_fit_sed = model(wl_complete, 10**alogSigmaD_FB[i], aT_FB[i],
+                                 aBeta_FB[0])
+            best_fit_model = z0mg_RSRF(wl_complete, best_fit_sed, bands)
+            diff = best_fit_model - aSED[i]
+            temp_matrix = np.array([np.sum(diff * cov_n1[:, j])
+                                    for j in range(5)])
+            chi2 = np.sum(temp_matrix * diff)
+            chi2_FB[binmap == binlist[i]] = chi2
+        chi2_FB /= (nwl - 2)
+        hf2.create_dataset('chi2_FB_' + method, data=chi2_FB)
+    #
+    print('Loading FBT data...\n')
+    fn_FBT = 'output/Dust_data_FBT_' + name + '_' + method + '.h5'
+    with File(fn_FBT, 'r') as hf:
+        alogSigmaD_FBT = np.array(hf['Dust_surface_density_log'])
+        SigmaD_FBT = list2bin(10**alogSigmaD_FBT, binlist, binmap)
+        logSigmaD_FBT = list2bin(alogSigmaD_FBT, binlist, binmap)
+        # with np.errstate(invalid='ignore'):
+        #     DGR_FBT = SigmaD_FBT / SigmaGas
+        SigmaD_dexerr_FBT = \
+            list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
+                     binmap)
+        aT_FBT = np.array(hf['Dust_temperature'])
+        T_FBT = list2bin(aT_FBT, binlist, binmap)
+        T_err_FBT = list2bin(np.array(hf['Dust_temperature_err']), binlist,
+                             binmap)
+        aBeta_FBT = np.array(hf['beta'])
+        Beta_FBT = list2bin(np.array(hf['beta']), binlist, binmap)
+        SigmaDs_FBT = 10**np.array(hf['logsigmas'])
+        aPDFs_FBT = np.array(hf['PDF'])
+    try:
+        chi2_FBT = np.array(hf2['chi2_FBT_' + method])
+    except KeyError:
+        chi2_FBT = np.empty_like(T_FBT)
+        chi2_FBT[np.isnan(T_FBT)] = np.nan
+        for i in range(len(binlist)):
+            cov_n1 = acov_n1[i]
+            best_fit_sed = model(wl_complete, 10**alogSigmaD_FBT[i], aT_FBT[i],
+                                 aBeta_FBT[0])
+            best_fit_model = z0mg_RSRF(wl_complete, best_fit_sed, bands)
+            diff = best_fit_model - aSED[i]
+            temp_matrix = np.array([np.sum(diff * cov_n1[:, j])
+                                    for j in range(5)])
+            chi2 = np.sum(temp_matrix * diff)
+            chi2_FBT[binmap == binlist[i]] = chi2
+        chi2_FBT /= (nwl - 1)
+        hf2.create_dataset('chi2_FBT_' + method, data=chi2_FBT)
+    hf2.close()
+    #
+    maxs = [-0.5,
+            1.5,
+            30,
+            15,
+            max(np.nanmax(Beta_AF), np.nanmax(Beta_FB),
+                np.nanmax(Beta_FBT)),
+            max(np.nanmax(Beta_err_AF), 2),
+            10]
+    mins = [-3.5,
+            0,
+            10,
+            0,
+            min(np.nanmin(Beta_AF), np.nanmin(Beta_FB),
+                np.nanmin(Beta_FBT)),
+            min(np.nanmin(Beta_err_AF), 2),
+            0]
+    titles = [r'$\log(\Sigma_d)$ ($\log(M_\odot/pc^2)$)',
+              r'$\log(\Sigma_d)$ error',
+              r'$T_d$ ($K$)',
+              r'$T_d$ error',
+              r'$\beta$',
+              r'$\beta$ error',
+              r'$\tilde{\chi}^2$']
     """
-    1X1: Example PDF
+    4X2: AF results
+    """
+    print('4X2: AF results')
+    rows, columns = 2, 4
+    fig = plt.figure(figsize=(8, 12))
+
+    images = [logSigmaD_AF,
+              SigmaD_dexerr_AF,
+              T_AF,
+              T_err_AF,
+              Beta_AF,
+              Beta_err_AF,
+              chi2_AF]
+
+    for i in range(7):
+        sub_ = columns * 100 + rows * 10 + i + 1
+        ax = fig.add_subplot(sub_, projection=wcs)
+        cax = ax.imshow(images[i], origin='lower', cmap=cmap0,
+                        vmax=maxs[i], vmin=mins[i])
+        ax.coords[0].set_major_formatter('hh:mm')
+        ax.coords[1].set_major_formatter('dd:mm')
+        plt.colorbar(cax, ax=ax)
+        ax.set_title(titles[i], fontdict={'fontsize': 16})
+        if i in [5, 6]:
+            ax.set_xlabel('R.A.')
+        if i in [0, 2, 4, 6]:
+            ax.set_ylabel('Dec.')
+    fig.tight_layout(pad=5.0, w_pad=2.0, h_pad=3.5)
+    with np.errstate(invalid='ignore'):
+        with PdfPages('output/' + method + '_2X4AF.pdf') as pp:
+            pp.savefig(fig)
+    del images, fig
+    """
+    4X2: FB results
+    """
+    print('4X2: FB results')
+    rows, columns = 2, 4
+    fig = plt.figure(figsize=(8, 12))
+
+    images = [logSigmaD_FB,
+              SigmaD_dexerr_FB,
+              T_FB,
+              T_err_FB,
+              Beta_FB,
+              np.zeros_like(binmap),
+              chi2_FB]
+
+    for i in range(7):
+        sub_ = columns * 100 + rows * 10 + i + 1
+        fig.add_subplot(sub_, projection=wcs)
+        plt.imshow(images[i], origin='lower', cmap=cmap0,
+                   vmax=maxs[i], vmin=mins[i])
+        plt.colorbar()
+        plt.title(titles[i], fontdict={'fontsize': 16})
+        if i in [5, 6]:
+            plt.xlabel('RA')
+        if i in [0, 2, 4, 6]:
+            plt.ylabel('Dec')
+    fig.tight_layout(pad=5.0, w_pad=2.0, h_pad=3.5)
+    with np.errstate(invalid='ignore'):
+        with PdfPages('output/' + method + '_2X4FB.pdf') as pp:
+            pp.savefig(fig)
+    del images, fig
+    """
+    4X2: FBT results
+    """
+    print('4X2: FBT results')
+    rows, columns = 2, 4
+    fig = plt.figure(figsize=(8, 12))
+
+    images = [logSigmaD_FBT,
+              SigmaD_dexerr_FBT,
+              T_FBT,
+              np.zeros_like(binmap),
+              Beta_FBT,
+              np.zeros_like(binmap),
+              chi2_FBT]
+
+    for i in range(7):
+        sub_ = columns * 100 + rows * 10 + i + 1
+        fig.add_subplot(sub_, projection=wcs)
+        plt.imshow(images[i], origin='lower', cmap=cmap0,
+                   vmax=maxs[i], vmin=mins[i])
+        plt.colorbar()
+        plt.title(titles[i], fontdict={'fontsize': 16})
+        if i in [5, 6]:
+            plt.xlabel('RA')
+        if i in [0, 2, 4, 6]:
+            plt.ylabel('Dec')
+    fig.tight_layout(pad=5.0, w_pad=2.0, h_pad=3.5)
+    with np.errstate(invalid='ignore'):
+        with PdfPages('output/' + method + '_2X4FBT.pdf') as pp:
+            pp.savefig(fig)
+    del images, fig
+    """
+    3X1: Temperature gradient & Sigma_SFR + Sigma_* profile
+    """
+    print('3X1: Temperature gradient & Sigma_SFR + Sigma_* profile')
+    r, t, w = np.array([]), np.array([]), np.array([])
+    for i in range(lbl):
+        temp_GM = aGas[i] * (binmap == binlist[i]).sum()
+        mask = a_T_PDFs_AF[i] > a_T_PDFs_AF[i].max() / 1000
+        temp_T, temp_P = Ts_AF[mask], a_T_PDFs_AF[i][mask]
+        temp_P = temp_P / np.sum(temp_P) * temp_GM
+        r = np.append(r, [aRadius[i]] * len(temp_T))
+        for j in range(len(temp_T)):
+            t = np.append(t, temp_T[j])
+            w = np.append(w, temp_P[j])
+    nanmask = np.isnan(r + t + w)
+    r, t, w = r[~nanmask], t[~nanmask], w[~nanmask]
+    rbins = np.linspace(np.min(r), np.max(r), rbin)
+    tbins = np.linspace(np.min(t), np.max(t), tbin)
+    # Counting hist2d
+    counts, _, _ = np.histogram2d(r, t, bins=(rbins, tbins), weights=w)
+    del r, t, w
+    # Fixing temperature
+    r, t, w = np.array([]), np.array([]), np.array([])
+    for i in range(lbl):
+        temp_GM = aGas[i] * (binmap == binlist[i]).sum()
+        mask = a_T_PDFs_FB[i] > a_T_PDFs_FB[i].max() / 1000
+        temp_T, temp_P = Ts_FB[mask], a_T_PDFs_FB[i][mask]
+        temp_P = temp_P / np.sum(temp_P) * temp_GM
+        r = np.append(r, [aRadius[i]] * len(temp_T))
+        for j in range(len(temp_T)):
+            t = np.append(t, temp_T[j])
+            w = np.append(w, temp_P[j])
+    nanmask = np.isnan(r + t + w)
+    r, t, w = r[~nanmask], t[~nanmask], w[~nanmask]
+    tbins_FB = np.linspace(np.min(t), np.max(t), tbin)
+    # Counting hist2d
+    counts_FB, _, _ = np.histogram2d(r, t, bins=(rbins, tbins_FB), weights=w)
+    del r, t, w
+    counts, counts_FB = counts.T, counts_FB.T
+    tbins2 = (tbins[:-1] + tbins[1:]) / 2
+    tbins2_FB = (tbins[:-1] + tbins[1:]) / 2
+    rbins2 = (rbins[:-1] + rbins[1:]) / 2
+    T_Exp, T_Exp_FB = np.array([]), np.array([])
+    n_zeromask = np.full(counts.shape[1], True, dtype=bool)
+    n_zeromask_FB = np.full(counts_FB.shape[1], True, dtype=bool)
+    # Calculating PDFs at each radial bin...
+    assert counts.shape[1] == counts_FB.shape[1]
+    for i in range(counts.shape[1]):
+        if np.sum(counts[:, i]) > 0:
+            counts[:, i] /= np.sum(counts[:, i])
+            T_Exp = np.append(T_Exp, np.sum(counts[:, i] * tbins2))
+        else:
+            n_zeromask[i] = False
+    for i in range(counts_FB.shape[1]):
+        if np.sum(counts_FB[:, i]) > 0:
+            counts_FB[:, i] /= np.sum(counts_FB[:, i])
+            T_Exp_FB = np.append(T_Exp_FB, np.sum(counts_FB[:, i] * tbins2_FB))
+        else:
+            n_zeromask_FB[i] = False
+    R_SFR, SFR_profile = simple_profile(SFR, Radius, 100, SigmaGas)
+    R_SMSD, SMSD_profile = simple_profile(SMSD, Radius, 100, SigmaGas)
+    #
+    rows, columns = 3, 1
+    fig, ax = plt.subplots(rows, columns, figsize=(10, 16))
+    titles = ['Temperature radial profile',
+              r'Temperature radial profile ($\beta=2$)',
+              r'$\Sigma_{SFR}$ and $\Sigma_*$ radial profile']
+    maxs = [np.nanmax(np.append(rbins2, np.append(R_SFR, R_SMSD)))]
+    mins = [np.nanmin(np.append(rbins2, np.append(R_SFR, R_SMSD)))]
+    temp1 = [tbins2, tbins2_FB]
+    temp2 = [counts, counts_FB]
+    temp3 = [T_Exp, T_Exp_FB]
+    temp4 = [n_zeromask, n_zeromask_FB]
+    del tbins2, tbins2_FB, counts, counts_FB, T_Exp, T_Exp_FB
+    for i in range(2):
+        ax[i].pcolormesh(rbins2, temp1[i], temp2[i], norm=LogNorm(),
+                         cmap=cmap3, vmin=1E-3)
+        ax[i].plot(rbins2[temp4[i]], temp3[i], 'b', label='Expectation')
+        ax[i].set_title(titles[i])
+        ax[i].set_xlabel(r'Radius ($R_{25}$)', size=16)
+        ax[i].set_ylabel(r'Temperature ($K$)', size=16)
+        ax[i].set_xlim([mins[0], maxs[0]])
+        ax[i].set_xticklabels(ax[i].get_xticks(), fontsize=12)
+        ax[i].set_yticklabels(ax[i].get_yticks(), fontsize=12)
+        ax[i].legend(fontsize=14)
+    del temp1, temp2, temp3, temp4
+    # IMWH
+    ax[2].semilogy(R_SFR, SFR_profile, 'k')
+    ax[2].set_xlabel(r'Radius ($R25$)', size=16)
+    ax[2].set_ylabel(r'$\Sigma_{SFR}$ ($M_\odot kpc^{-2} yr^{-1}$)',
+                     size=16, color='k')
+    ax[2].tick_params('y', colors='k')
+    ax[2].set_xticklabels(ax[2].get_xticks(), fontsize=12)
+    ax[2].set_yticklabels(ax[2].get_yticks(), fontsize=12)
+    ax2 = ax[2].twinx()
+    ax2.semilogy(R_SMSD, SMSD_profile, c='b')
+    ax2.set_ylabel(r'$\Sigma_*$ ($M_\odot pc^{-2}$)', size=16, color='b')
+    ax2.tick_params('y', colors='b')
+    ax2.set_xlim([0, rbins2[n_zeromask].max()])
+    ax2.set_yticklabels(ax2.get_xticks(), fontsize=12)
+    ax2.set_title(titles[2])
+    fig.tight_layout()
+    with PdfPages('output/_3X1TempRP.pdf') as pp:
+        pp.savefig(fig)
+    del R_SFR, SFR_profile, R_SMSD, SMSD_profile, fig, ax, ax2
+    """
+    1X2: Fitted vs. predicted temperature: residual map and radial profile
+    """
+    print('1X2: Fitted vs. predicted temperature: residual map and radial',
+          'profile')
+    rows, columns = 1, 2
+    fig, ax = plt.subplots(rows, columns, figsize=(12, 6),
+                           subplot_kw={'projection': wcs})
+    titles = ['residual map',
+              'Radial profile']
+    cax = ax[0].imshow(T_FBT - T_FB, origin='lower', cmap=cmap0)
+    ax[0].set_title(titles[0], size=20)
+    ax[0].set_xlabel('RA', size=16)
+    ax[0].set_xticklabels(ax[0].get_xticks(), fontsize=16)
+    ax[0].set_ylabel('Dec', size=16)
+    ax[0].set_yticklabels(ax[0].get_yticks(), fontsize=16)
+    fig.colorbar(cax, ax=ax[0])
+    R_Tfb, Tfb_profile = simple_profile(T_FB, Radius, 100, SigmaGas)
+    R_TFBT, TFBT_profile = simple_profile(T_FBT, Radius, 100, SigmaGas)
+    ax[1].plot(R_Tfb, Tfb_profile, label=r'$\beta=2$')
+    ax[1].plot(R_TFBT, TFBT_profile, label=r'$\beta=2$, pred temperature')
+    ax[1].set_xlabel(r'Radius ($R25$)', size=16)
+    ax[1].set_ylabel(r'Temperature ($K$)', size=16)
+    ax[1].set_xticklabels(ax[1].get_xticks(), fontsize=12)
+    ax[1].set_yticklabels(ax[1].get_yticks(), fontsize=12)
+    ax[1].legend(fontsize=14)
+    fig.tight_layout()
+    with PdfPages('output/_1X2Tempfb_FBT.pdf') as pp:
+        pp.savefig(fig)
+    del titles, cax, fig, ax, rows, columns, R_Tfb, Tfb_profile, R_TFBT, \
+        TFBT_profile
+    #
+    pdf_profiles(aGas, aRadius, aPDFs_AF, SigmaDs_AF, binmap, binlist, rbin,
+                 dbin, cmap1, name, R25, 'AF')
+    pdf_profiles(aGas, aRadius, aPDFs_FB, SigmaDs_FB, binmap, binlist, rbin,
+                 dbin, cmap1, name, R25, 'FB')
+    pdf_profiles(aGas, aRadius, aPDFs_FBT, SigmaDs_FBT, binmap, binlist, rbin,
+                 dbin, cmap1, name, R25, 'FBT')
+    #
+    """
     1X1: Example Model
-    5X : Residue maps
     """
-    print('1X1: Example PDF (FBT)')
-    x, y = 55, 55  # i=1378
+    x, y = 55, 55
     for i in range(lbl):
         bin_ = binmap == binlist[i]
         if bin_[y, x]:
-            # PDF
-            pdf = aPDFs_FBT[i] / np.sum(aPDFs_FBT[i])
-            csp = np.cumsum(pdf)[:-1]
-            csp = np.append(0, csp / csp[-1])
-            sss = np.interp([0.16, 0.5, 0.84], csp, SigmaDs_FBT).tolist()
-            mask = pdf > (pdf.max() * 1.0E-5)
-            pdf, SigmaDs_FBT = pdf[mask], SigmaDs_FBT[mask]
-            temp_y = np.linspace(0, pdf.max(), 10)
-            # LogSigmaD_Med = sss[1]
-            SigmaD_Exp = 10**np.sum(pdf * np.log10(SigmaDs_FBT))
-            SigmaD_Max = SigmaDs_FBT[np.argmax(pdf)]
-            xticks = np.logspace(np.log10(np.nanmin(SigmaDs_FBT)),
-                                 np.log10(np.nanmax(SigmaDs_FBT)), 5)
-            for j in range(len(xticks)):
-                xticks[j] = round(xticks[j], 2)
-            """
-            Begin plotting
-            """
-            fig, ax = plt.subplots(figsize=(10, 7.5))
-            ax.semilogx([sss[0]] * 10, temp_y, alpha=0.5,
-                        label='16%')
-            ax.semilogx([sss[2]] * 10, temp_y, alpha=0.5,
-                        label='84%')
-            ax.semilogx([sss[1]] * 10, temp_y, label='Median')
-            ax.semilogx([SigmaD_Exp] * 10, temp_y,
-                        label='Expectation')
-            ax.semilogx([SigmaD_Max] * 10, temp_y,
-                        label='Maximum')
-            ax.semilogx(SigmaDs_FBT, pdf, label='PDF')
-            ax.set_xlabel(r'$\log_{10}\Sigma_d$', size=16)
-            ax.set_ylabel('Probability', size=16)
-            ax.legend(fontsize=16)
-            # ax.set_xticks(xticks)
-            # ax.set_xticklabels(ax.get_xticks(), fontsize=12)
-            ax.set_yticklabels(ax.get_yticks(), fontsize=12)
-            with PdfPages('output/_1X1Example_PDF.pdf') as pp:
+            print('1X3: Example Model (FBT)')
+            rows, columns = 3, 1
+            fig, ax = plt.subplots(rows, columns, figsize=(6, 10))
+            wl_complete = np.linspace(1, 800, 1000)
+            if method == '011111':
+                wl_plot = np.linspace(51, 549, 100)
+            elif method == '001111':
+                wl_plot = np.linspace(111, 549, 100)
+            sed, cov_n1, unc = aSED[i], acov_n1[i], uncs[i]
+            cases = ['AF', 'FB', 'FBT']
+            logsigma_step = 0.025
+            min_logsigma = -4.
+            max_logsigma = 1.
+            T_step = 0.5
+            min_T = 5.
+            max_T = 50.
+            beta_step = 0.1
+            min_beta = -1.0
+            max_beta = 4.0
+            Sigmas_raw = 10**np.arange(min_logsigma, max_logsigma,
+                                       logsigma_step)
+            Ts_raw = np.arange(min_T, max_T, T_step)
+            betas_raw = np.arange(min_beta, max_beta, beta_step)
+            for j in range(3):
+                print('\t' + cases[j] + ' case...')
+                if j == 0:
+                    SigmaD, T, Beta = \
+                        10**alogSigmaD_AF[i], aT_AF[i], aBeta_AF[i]
+                if j == 1:
+                    SigmaD, T, Beta = \
+                        10**alogSigmaD_FB[i], aT_FB[i], aBeta_FB[i]
+                if j == 2:
+                    SigmaD, T, Beta = \
+                        10**alogSigmaD_FBT[i], aT_FBT[i], aBeta_FBT[i]
+                model_complete = model(wl_complete, SigmaD, T, Beta)
+                ccf = model(wl, SigmaD, T, Beta) / \
+                    z0mg_RSRF(wl_complete, model_complete, bands)
+                sed_obs_plot = sed * ccf
+                unc_obs_plot = unc * ccf
+                sed_best_plot = model(wl_plot, SigmaD, T, Beta)
+                ax[j].set_ylim([0.0, np.nanmax(sed_best_plot) * 1.2])
+                pr_c = 1 / 50
+                #
+                # Begin plotting
+                #
+                if j == 0:
+                    Sigmas, Ts, Betas = np.meshgrid(Sigmas_raw, Ts_raw,
+                                                    betas_raw)
+                    models = np.zeros([Ts.shape[0], Ts.shape[1], Ts.shape[2],
+                                       nwl])
+                    for a in range(nwl):
+                        models[:, :, :, a] = model(wl[a], Sigmas, Ts, Betas)
+                    diff = (models - sed_obs_plot)
+                    temp_matrix = np.empty_like(diff)
+                    for a in range(nwl):
+                        temp_matrix[:, :, :, a] = np.sum(diff * cov_n1[:, a],
+                                                         axis=3)
+                    chi2 = np.sum(temp_matrix * diff, axis=3)
+                    chi2 -= np.nanmin(chi2)
+                    pr = np.exp(-0.5 * chi2) * 0.2
+                    for a in range(Ts.shape[0]):
+                        for b in range(Ts.shape[1]):
+                            for m in range(Ts.shape[2]):
+                                if pr[a, b, m] >= pr_c:
+                                    ax[j].plot(wl_plot,
+                                               model(wl_plot, Sigmas[a, b, m],
+                                                     Ts[a, b, m],
+                                                     Betas[a, b, m]),
+                                               alpha=pr[a, b, m], color='k')
+                if j == 1:
+                    Sigmas, Ts = np.meshgrid(Sigmas_raw, Ts_raw)
+                    models = np.zeros([Ts.shape[0], Ts.shape[1], nwl])
+                    for a in range(nwl):
+                        models[:, :, a] = model(wl[a], Sigmas, Ts, Beta)
+                    diff = (models - sed_obs_plot)
+                    temp_matrix = np.empty_like(diff)
+                    for a in range(nwl):
+                        temp_matrix[:, :, a] = np.sum(diff * cov_n1[:, a],
+                                                      axis=2)
+                    chi2 = np.sum(temp_matrix * diff, axis=2)
+                    chi2 -= np.nanmin(chi2)
+                    pr = np.exp(-0.5 * chi2) * 0.6
+                    for a in range(Ts.shape[0]):
+                        for b in range(Ts.shape[1]):
+                            if pr[a, b] >= pr_c:
+                                ax[j].plot(wl_plot,
+                                           model(wl_plot, Sigmas[a, b],
+                                                 Ts[a, b], Beta),
+                                           alpha=pr[a, b], color='k')
+                if j == 2:
+                    models = np.zeros([len(Sigmas_raw), nwl])
+                    for a in range(nwl):
+                        models[:, a] = model(wl[a], Sigmas_raw, T, Beta)
+                    diff = (models - sed_obs_plot)
+                    temp_matrix = np.empty_like(diff)
+                    for a in range(nwl):
+                        temp_matrix[:, a] = np.sum(diff * cov_n1[:, a], axis=1)
+                    chi2 = np.sum(temp_matrix * diff, axis=1)
+                    chi2 -= np.nanmin(chi2)
+                    pr = np.exp(-0.5 * chi2) * 1.2
+                    pr[pr > 1] = 1
+                    for a in range(len(Sigmas_raw)):
+                        if pr[a] >= pr_c:
+                            ax[j].plot(wl_plot,
+                                       model(wl_plot, Sigmas_raw[a], T,
+                                             Beta), alpha=pr[a], color='k')
+                #
+                ax[j].plot(wl_plot, sed_best_plot, linewidth=3,
+                           label=cases[j] + ' best fit')
+                ax[j].errorbar(wl, sed_obs_plot, yerr=unc_obs_plot, fmt='o',
+                               color='red', capsize=10, label='Herschel data')
+                ax[j].legend(fontsize=12)
+                if j == 2:
+                    ax[j].set_xlabel(r'Wavelength ($\mu m$)', size=12)
+                else:
+                    ax[j].set_xticklabels([])
+                ax[j].set_ylabel(r'SED ($MJy$ $sr^{-1}$)', size=12)
+            fig.tight_layout()
+            with PdfPages('output/_1X3Example_Model.pdf') as pp:
                 pp.savefig(fig)
-            """
-            Model Calculation: Color correction factor calculation
-            """
-            print('1X1: Example Model (FBT)')
-            ccf = np.zeros(5)
-            pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
-            pacs_wl = pacs_rsrf['Wavelength'].values
-            pacs_nu = (c / pacs_wl / u.um).to(u.Hz)
-            pacs100dnu = \
-                pacs_rsrf['PACS_100'].values * pacs_rsrf['dnu'].values[0]
-            pacs160dnu = \
-                pacs_rsrf['PACS_160'].values * pacs_rsrf['dnu'].values[0]
-            del pacs_rsrf
-            #
-            pacs_models = \
-                B(aT_FBT[i] * u.K, pacs_nu) * pacs_wl**(-aBeta_FBT[i])
-            del pacs_nu
-            ccf[0] = np.sum(pacs100dnu * pacs_wl / wl[0]) / \
-                np.sum(pacs100dnu * pacs_models /
-                       (B(aT_FBT[i] * u.K, nu[0]) * wl[0]**(-aBeta_FBT[i])))
-            ccf[1] = np.sum(pacs160dnu * pacs_wl / wl[1]) / \
-                np.sum(pacs160dnu * pacs_models /
-                       (B(aT_FBT[i] * u.K, nu[1]) * wl[1]**(-aBeta_FBT[i])))
-            #
-            del pacs_wl, pacs100dnu, pacs160dnu, pacs_models
-            ##
-            spire_rsrf = pd.read_csv("data/RSRF/SPIRE_RSRF.csv")
-            spire_wl = spire_rsrf['Wavelength'].values
-            spire_nu = (c / spire_wl / u.um).to(u.Hz)
-            spire250dnu = \
-                spire_rsrf['SPIRE_250'].values * spire_rsrf['dnu'].values[0]
-            spire350dnu = \
-                spire_rsrf['SPIRE_350'].values * spire_rsrf['dnu'].values[0]
-            spire500dnu = \
-                spire_rsrf['SPIRE_500'].values * spire_rsrf['dnu'].values[0]
-            del spire_rsrf
-            #
-            spire_models = \
-                B(aT_FBT[i] * u.K, spire_nu) * spire_wl**(-aBeta_FBT[i])
-            del spire_nu
-            ccf[2] = np.sum(spire250dnu * spire_wl / wl[2]) / \
-                np.sum(spire250dnu * spire_models /
-                       (B(aT_FBT[i] * u.K, nu[2]) * wl[2]**(-aBeta_FBT[i])))
-            ccf[3] = np.sum(spire350dnu * spire_wl / wl[3]) / \
-                np.sum(spire350dnu * spire_models /
-                       (B(aT_FBT[i] * u.K, nu[3]) * wl[3]**(-aBeta_FBT[i])))
-            ccf[4] = np.sum(spire500dnu * spire_wl / wl[4]) / \
-                np.sum(spire500dnu * spire_models /
-                       (B(aT_FBT[i] * u.K, nu[4]) * wl[4]**(-aBeta_FBT[i])))
-            #
-            del spire_wl, spire250dnu, spire350dnu, spire500dnu
-            del spire_models
-            sed = aSED[i]
-            if method == '001111':
-                ccf = ccf[1:]
-                wl = wl[1:]
-            sed_plot = sed * ccf
-            #
-            cov_n1, unc = acov_n1[i], uncs[i]
-            sed_unc_plot = unc * ccf
-            wl_plot = np.linspace(51, 549, 100)
-            nu_plot = (c / wl_plot / u.um).to(u.Hz)
-            pdf /= np.nanmax(pdf) / 0.5
-            model_exp = model(wl_plot, SigmaD_Exp, aT_FBT[i], aBeta_FBT[i],
-                              nu_plot)
-            """
-            Begin plotting / FBT
-            """
-            fig, ax = plt.subplots(figsize=(10, 7.5))
-            ax.errorbar(wl, sed_plot, yerr=sed_unc_plot, color='red',
-                        fmt='o', capsize=10, label='Herschel data')
-            """
-            ax.errorbar(wl, aSED[i], yerr=unc, color='green', fmt='o',
-                        capsize=10, label='Raw Herschel')
-            """
-            for j in range(len(pdf)):
-                ax.plot(wl_plot,
-                        model(wl_plot, SigmaDs_FBT[j], aT_FBT[i],
-                              aBeta_FBT[i], (c / wl_plot / u.um).to(u.Hz)),
-                        'k', alpha=pdf[j])
-            ax.plot(wl_plot, model_exp, label='Expectation', linewidth=3)
-            ax.legend(fontsize=20)
-            ax.set_ylim([0.0, np.nanmax(model_exp) * 1.2])
-            ax.set_xlabel(r'Wavelength ($\mu m$)', size=20)
-            ax.set_ylabel(r'SED ($MJy$ $sr^{-1}$)', size=20)
-            ax.set_xticklabels(ax.get_xticks(), fontsize=12)
-            ax.set_yticklabels(ax.get_yticks(), fontsize=12)
-            with PdfPages('output/_1X1Example_Model_FBT.pdf') as pp:
-                pp.savefig(fig)
-            del fig, ax, model_exp, pdf, ccf, sed_plot, sed_unc_plot
-            """
-            Loading models / FB
-            """
-            print('1X1: Example Model (FB)')
-            b_ML = round(Beta_fb[~np.isnan(Beta_fb)][0], 1)
-            fn = 'output/rsrf_models_b_' + str(b_ML) + '.h5'
-            with File(fn, 'r') as hf:
-                models = np.array(hf['models_fb'])
-                if method == '001111':
-                    models = models[:, :, 1:]
-            diff = models - aSED[i]
-            temp_matrix = np.empty_like(diff)
-            for j in range(nwl):
-                temp_matrix[:, :, j] = np.sum(diff * cov_n1[:, j], axis=2)
-            chi2 = np.sum(temp_matrix * diff, axis=2)
-            pr = np.exp(-0.5 * chi2)
-            pr /= np.nanmax(pr) / 0.5
-            del models, temp_matrix, diff, chi2
-            SigmaDs_fb, Ts_fb = np.meshgrid(SigmaDs_fb, Ts_fb)
-            Z = np.sum(pr)
-            s_exp = 10**(np.sum(np.log10(SigmaDs_fb) * pr) / Z)
-            t_exp = np.sum(Ts_fb * pr) / Z
-            """
-            Calculate color correction factors
-            """
-            ccf = np.zeros(5)
-            wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
-            pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
-            pacs_wl = pacs_rsrf['Wavelength'].values
-            pacs_nu = (c / pacs_wl / u.um).to(u.Hz)
-            pacs100dnu = \
-                pacs_rsrf['PACS_100'].values * pacs_rsrf['dnu'].values[0]
-            pacs160dnu = \
-                pacs_rsrf['PACS_160'].values * pacs_rsrf['dnu'].values[0]
-            del pacs_rsrf
-            #
-            pacs_models = B(t_exp * u.K, pacs_nu) * pacs_wl**(-b_ML)
-            del pacs_nu
-            ccf[0] = np.sum(pacs100dnu * pacs_wl / wl[0]) / \
-                np.sum(pacs100dnu * pacs_models /
-                       (B(t_exp * u.K, nu[0]) * wl[0]**(-b_ML)))
-            ccf[1] = np.sum(pacs160dnu * pacs_wl / wl[1]) / \
-                np.sum(pacs160dnu * pacs_models /
-                       (B(t_exp * u.K, nu[1]) * wl[1]**(-b_ML)))
-            #
-            del pacs_wl, pacs100dnu, pacs160dnu, pacs_models
-            ##
-            spire_rsrf = pd.read_csv("data/RSRF/SPIRE_RSRF.csv")
-            spire_wl = spire_rsrf['Wavelength'].values
-            spire_nu = (c / spire_wl / u.um).to(u.Hz)
-            spire250dnu = \
-                spire_rsrf['SPIRE_250'].values * spire_rsrf['dnu'].values[0]
-            spire350dnu = \
-                spire_rsrf['SPIRE_350'].values * spire_rsrf['dnu'].values[0]
-            spire500dnu = \
-                spire_rsrf['SPIRE_500'].values * spire_rsrf['dnu'].values[0]
-            del spire_rsrf
-            #
-            spire_models = B(t_exp * u.K, spire_nu) * spire_wl**(-b_ML)
-            del spire_nu
-            ccf[2] = np.sum(spire250dnu * spire_wl / wl[2]) / \
-                np.sum(spire250dnu * spire_models /
-                       (B(t_exp * u.K, nu[2]) * wl[2]**(-b_ML)))
-            ccf[3] = np.sum(spire350dnu * spire_wl / wl[3]) / \
-                np.sum(spire350dnu * spire_models /
-                       (B(t_exp * u.K, nu[3]) * wl[3]**(-b_ML)))
-            ccf[4] = np.sum(spire500dnu * spire_wl / wl[4]) / \
-                np.sum(spire500dnu * spire_models /
-                       (B(t_exp * u.K, nu[4]) * wl[4]**(-b_ML)))
-            #
-            del spire_wl, spire250dnu, spire350dnu, spire500dnu
-            del spire_models
-            if method == '001111':
-                ccf = ccf[1:]
-                wl = wl[1:]
-            sed_plot = sed * ccf
-            sed_unc_plot = unc * ccf
-            models_plot = np.zeros([Ts_fb.shape[0], Ts_fb.shape[1], 100])
-            for j in range(100):
-                models_plot[:, :, j] = model(wl_plot[j], SigmaDs_fb, Ts_fb,
-                                             b_ML, nu_plot[j])
-            model_exp = model(wl_plot, s_exp, t_exp, b_ML, nu_plot)
-            """
-            Begin plotting / FB
-            """
-            fig, ax = plt.subplots(figsize=(10, 7.5))
-            ax.errorbar(wl, sed_plot, yerr=sed_unc_plot, color='red',
-                        fmt='o', capsize=10, label='Herschel data')
-            """
-            ax.errorbar(wl, aSED[i], yerr=unc, color='green', fmt='o',
-                        capsize=10, label='Raw Herschel')
-            """
-            for j in range(Ts_fb.shape[0]):
-                for k in range(Ts_fb.shape[1]):
-                    if pr[j, k] > 0.01:
-                        ax.plot(wl_plot, models_plot[j, k], 'k',
-                                alpha=pr[j, k])
-            ax.plot(wl_plot, model_exp, label='Expectation', linewidth=3)
-            ax.legend(fontsize=20)
-            ax.set_ylim([0.0, np.nanmax(model_exp) * 1.2])
-            ax.set_xlabel(r'Wavelength ($\mu m$)', size=20)
-            ax.set_ylabel(r'SED ($MJy$ $sr^{-1}$)', size=20)
-            ax.set_xticklabels(ax.get_xticks(), fontsize=12)
-            ax.set_yticklabels(ax.get_yticks(), fontsize=12)
-            with PdfPages('output/_1X1Example_Model_FB.pdf') as pp:
-                pp.savefig(fig)
-            del fig, ax, model_exp, ccf, sed_plot, sed_unc_plot, models_plot, \
-                pr
             break
     """
     End plotting
@@ -1409,12 +1383,10 @@ def plot_single_pixel(name='NGC5457', cmap0='gist_heat', plot_model=True,
                 pdf /= np.nanmax(pdf) / 0.5
                 for j in range(len(pdf)):
                     ax.plot(wl_plot,
-                            model(wl_plot, 10**logsigmas[j], aT[i], aBeta[i],
-                                  (c / wl_plot / u.um).to(u.Hz)), 'k',
-                            alpha=pdf[j])
+                            model(wl_plot, 10**logsigmas[j], aT[i], aBeta[i]),
+                            'k', alpha=pdf[j])
                 ax.plot(wl_plot,
-                        model(wl_plot, 10**LogSigmaD_Exp, aT[i], aBeta[i],
-                              (c / wl_plot / u.um).to(u.Hz)),
+                        model(wl_plot, 10**LogSigmaD_Exp, aT[i], aBeta[i]),
                         label='Model: Expectation (Log)',
                         linewidth=3)
                 ax.legend(fontsize=20)
@@ -1428,10 +1400,10 @@ def plot_single_pixel(name='NGC5457', cmap0='gist_heat', plot_model=True,
             return 0
 
 
-def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
-                 Toff=20, dr25=0.025, method='011111',
-                 cmap0='gist_heat', cmap1='Greys', cmap2='seismic',
-                 cmap3='Reds'):
+def residual_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
+                  Toff=20, dr25=0.025, method='011111',
+                  cmap0='gist_heat', cmap1='Greys', cmap2='seismic',
+                  cmap3='Reds'):
     plt.close('all')
     plt.ioff()
     print('Loading data...\n')
@@ -1486,22 +1458,22 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     fn_FB = 'output/Dust_data_FB_' + name + '_' + method + '.h5'
     with File(fn_FB, 'r') as hf:
         aSigmaD_FB = 10**np.array(hf['Dust_surface_density_log'])
-        # SigmaD_fb = list2bin(aSigmaD_fb, binlist, binmap)
+        # SigmaD_FB = list2bin(aSigmaD_FB, binlist, binmap)
         # with np.errstate(invalid='ignore'):
-        #     DGR_fb = SigmaD_fb / SigmaGas
-        # SigmaD_dexerr_fb = \
+        #     DGR_FB = SigmaD_FB / SigmaGas
+        # SigmaD_dexerr_FB = \
         #     list2bin(np.array(hf['Dust_surface_density_err_dex']), binlist,
         #              binmap)
         aT_FB = np.array(hf['Dust_temperature'])
-        # T_fb = list2bin(aT_fb, binlist, binmap)
-        # T_err_fb = list2bin(np.array(hf['Dust_temperature_err']), binlist,
+        # T_FB = list2bin(aT_FB, binlist, binmap)
+        # T_err_FB = list2bin(np.array(hf['Dust_temperature_err']), binlist,
         #                     binmap)
         aBeta_FB = np.array(hf['beta'])
-        # Beta_fb = list2bin(aBeta_fb, binlist, binmap)
-        # SigmaDs_fb = 10**np.array(hf['logsigmas'])
-        # aPDFs_fb = np.array(hf['PDF'])
-        # Ts_fb = np.array(hf['Ts'])
-        # a_T_PDFs_fb = np.array(hf['PDF_T'])
+        # Beta_FB = list2bin(aBeta_FB, binlist, binmap)
+        # SigmaDs_FB = 10**np.array(hf['logsigmas'])
+        # aPDFs_FB = np.array(hf['PDF'])
+        # Ts_FB = np.array(hf['Ts'])
+        # a_T_PDFs_FB = np.array(hf['PDF_T'])
         # aModel = np.array(hf['Best_fit_model'])
 
     fn_FBT = 'output/Dust_data_FBT_' + name + '_' + method + '.h5'
@@ -1534,7 +1506,6 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     """
     pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
     pacs_wl = pacs_rsrf['Wavelength'].values
-    pacs_nu = (c / pacs_wl / u.um).to(u.Hz)
     pacs100dnu = \
         pacs_rsrf['PACS_100'].values * pacs_rsrf['dnu'].values[0]
     pacs160dnu = \
@@ -1544,21 +1515,21 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     p_models = np.zeros([lbl, len(pacs_wl)])
     for j in range(lbl):
         p_models[j] = model(pacs_wl, aSigmaD_AF[j], aT_AF[j],
-                            aBeta_AF[j], pacs_nu)
+                            aBeta_AF[j])
     aModel_exp5_AF[:, 0] = np.sum(p_models * pacs100dnu, axis=1) / \
         np.sum(pacs100dnu * pacs_wl / wl[0])
     aModel_exp5_AF[:, 1] = np.sum(p_models * pacs160dnu, axis=1) / \
         np.sum(pacs160dnu * pacs_wl / wl[1])
     for j in range(lbl):
         p_models[j] = model(pacs_wl, aSigmaD_FB[j], aT_FB[j],
-                            aBeta_FB[j], pacs_nu)
+                            aBeta_FB[j])
     aModel_exp5_FB[:, 0] = np.sum(p_models * pacs100dnu, axis=1) / \
         np.sum(pacs100dnu * pacs_wl / wl[0])
     aModel_exp5_FB[:, 1] = np.sum(p_models * pacs160dnu, axis=1) / \
         np.sum(pacs160dnu * pacs_wl / wl[1])
     for j in range(lbl):
         p_models[j] = model(pacs_wl, aSigmaD_FBT[j], aT_FBT[j],
-                            aBeta_FBT[j], pacs_nu)
+                            aBeta_FBT[j])
     aModel_exp5_FBT[:, 0] = np.sum(p_models * pacs100dnu, axis=1) / \
         np.sum(pacs100dnu * pacs_wl / wl[0])
     aModel_exp5_FBT[:, 1] = np.sum(p_models * pacs160dnu, axis=1) / \
@@ -1580,7 +1551,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     s_models = np.zeros([lbl, len(spire_wl)])
     for j in range(lbl):
         s_models[j] = model(spire_wl, aSigmaD_AF[j], aT_AF[j],
-                            aBeta_AF[j], spire_nu)
+                            aBeta_AF[j])
     aModel_exp5_AF[:, 2] = np.sum(s_models * spire250dnu, axis=1) / \
         np.sum(spire250dnu * spire_wl / wl[2])
     aModel_exp5_AF[:, 3] = np.sum(s_models * spire350dnu, axis=1) / \
@@ -1589,7 +1560,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         np.sum(spire500dnu * spire_wl / wl[4])
     for j in range(lbl):
         s_models[j] = model(spire_wl, aSigmaD_FB[j], aT_FB[j],
-                            aBeta_FB[j], spire_nu)
+                            aBeta_FB[j])
     aModel_exp5_FB[:, 2] = np.sum(s_models * spire250dnu, axis=1) / \
         np.sum(spire250dnu * spire_wl / wl[2])
     aModel_exp5_FB[:, 3] = np.sum(s_models * spire350dnu, axis=1) / \
@@ -1598,7 +1569,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         np.sum(spire500dnu * spire_wl / wl[4])
     for j in range(lbl):
         s_models[j] = model(spire_wl, aSigmaD_FBT[j], aT_FBT[j],
-                            aBeta_FBT[j], spire_nu)
+                            aBeta_FBT[j])
     aModel_exp5_FBT[:, 2] = np.sum(s_models * spire250dnu, axis=1) / \
         np.sum(spire250dnu * spire_wl / wl[2])
     aModel_exp5_FBT[:, 3] = np.sum(s_models * spire350dnu, axis=1) / \
@@ -1630,9 +1601,9 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     fig_c2, ax_c2 = plt.subplots(3, 1, figsize=(6, 12),
                                  subplot_kw={'projection': wcs})
     """
-    2X2: Residue Maps (AF)
+    2X2: residual Maps (AF)
     """
-    print('2X2: Residue Maps (AF)')
+    print('2X2: residual Maps (AF)')
     achi2 = []
     for i in range(lbl):
         diff = aModel_exp5_AF[i] - aSED[i]
@@ -1647,7 +1618,9 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     fig_c2.colorbar(cax, ax=ax_c2[p])
     ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' AF; ' + method)
     vmins = [max(min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_AF[:, i])),
-                 0) for i in range(nwl)]
+                 min(np.nanmin(np.abs(aSED[:, i])),
+                     np.nanmin(np.abs(aModel_exp5_AF[:, i]))))
+             for i in range(nwl)]
     vmaxs = [max(np.nanmax(aSED[:, i]), np.nanmax(aModel_exp5_AF[:, i]))
              for i in range(nwl)]
     # maxs = [np.nanmax(np.append(temp[0], temp[2])),
@@ -1657,7 +1630,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     for i in range(nwl):
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_AF[:, i], binlist, binmap)
-        residue_map = sed_map - model_map
+        residual_map = sed_map - model_map
         fig, ax = plt.subplots(3, 2, figsize=size_,
                                subplot_kw={'projection': wcs})
         p, q = 0, 0
@@ -1678,29 +1651,30 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title(r'Reduced $\chi^2$')
         p, q = 1, 1
-        cax = ax[p, q].imshow(residue_map,
+        cax = ax[p, q].imshow(residual_map,
                               origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue')
+        ax[p, q].set_title('residual')
         p, q = 2, 0
-        cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
+        cax = ax[p, q].imshow(residual_map / uncs_map[i], vmin=rmin, vmax=rmax,
                               origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue / Uncertainty')
+        ax[p, q].set_title('residual / Uncertainty')
         p, q = 2, 1
-        cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
+        cax = ax[p, q].imshow(residual_map / sed_map, vmin=romin, vmax=romax,
                               origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue / Observation')
+        ax[p, q].set_title('residual / Observation')
         fig.suptitle(titles[i] + ' (AF)')
         fig.tight_layout()
-        fig.savefig('output/_2X2Residue_Map_' + titles[i] + '_AF_' + method +
-                    '.png')
+        with np.errstate(invalid='ignore'):
+            fig.savefig('output/_2X2residual_Map_' + titles[i] + '_AF_' +
+                        method + '.png')
         plt.close(fig)
     """
-    2X2: Residue Maps (FB)
+    2X2: residual Maps (FB)
     """
-    print('2X2: Residue Maps (FB)')
+    print('2X2: residual Maps (FB)')
     achi2 = []
     for i in range(lbl):
         diff = aModel_exp5_AF[i] - aSED[i]
@@ -1714,7 +1688,9 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
                           origin='lower', cmap=cmap0)
     fig_c2.colorbar(cax, ax=ax_c2[p])
     ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' FB; ' + method)
-    vmins = [min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_FB[:, i]))
+    vmins = [max(min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_FB[:, i])),
+                 min(np.nanmin(np.abs(aSED[:, i])),
+                     np.nanmin(np.abs(aModel_exp5_FB[:, i]))))
              for i in range(nwl)]
     vmaxs = [max(np.nanmax(aSED[:, i]), np.nanmax(aModel_exp5_FB[:, i]))
              for i in range(nwl)]
@@ -1725,7 +1701,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     for i in range(nwl):
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_FB[:, i], binlist, binmap)
-        residue_map = sed_map - model_map
+        residual_map = sed_map - model_map
         fig, ax = plt.subplots(3, 2, figsize=size_,
                                subplot_kw={'projection': wcs})
         p, q = 0, 0
@@ -1746,29 +1722,30 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title(r'Reduced $\chi^2$')
         p, q = 1, 1
-        cax = ax[p, q].imshow(residue_map,
+        cax = ax[p, q].imshow(residual_map,
                               origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue')
+        ax[p, q].set_title('residual')
         p, q = 2, 0
-        cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
+        cax = ax[p, q].imshow(residual_map / uncs_map[i], vmin=rmin, vmax=rmax,
                               origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue / Uncertainty')
+        ax[p, q].set_title('residual / Uncertainty')
         p, q = 2, 1
-        cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
+        cax = ax[p, q].imshow(residual_map / sed_map, vmin=romin, vmax=romax,
                               origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue / Observation')
+        ax[p, q].set_title('residual / Observation')
         fig.suptitle(titles[i] + ' (FB)')
         fig.tight_layout()
-        fig.savefig('output/_2X2Residue_Map_' + titles[i] + '_FB_' + method +
-                    '.png')
+        with np.errstate(invalid='ignore'):
+            fig.savefig('output/_2X2residual_Map_' + titles[i] + '_FB_' +
+                        method + '.png')
         plt.close(fig)
     """
-    2X2: Residue Maps (FBT)
+    2X2: residual Maps (FBT)
     """
-    print('2X2: Residue Maps (FBT)')
+    print('2X2: residual Maps (FBT)')
     achi2 = []
     for i in range(lbl):
         diff = aModel_exp5_AF[i] - aSED[i]
@@ -1783,7 +1760,9 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     fig_c2.colorbar(cax, ax=ax_c2[p])
     ax_c2[p].set_title(r'Reduced $\chi^2$:' + ' FBT; ' + method)
     fig_c2.savefig('output/reduced_x2_' + method + '.png')
-    vmins = [min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_FBT[:, i]))
+    vmins = [max(min(np.nanmin(aSED[:, i]), np.nanmin(aModel_exp5_FBT[:, i])),
+                 min(np.nanmin(np.abs(aSED[:, i])),
+                     np.nanmin(np.abs(aModel_exp5_FBT[:, i]))))
              for i in range(nwl)]
     vmaxs = [max(np.nanmax(aSED[:, i]), np.nanmax(aModel_exp5_FBT[:, i]))
              for i in range(nwl)]
@@ -1794,7 +1773,7 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
     for i in range(nwl):
         sed_map = list2bin(aSED[:, i], binlist, binmap)
         model_map = list2bin(aModel_exp5_FBT[:, i], binlist, binmap)
-        residue_map = sed_map - model_map
+        residual_map = sed_map - model_map
         fig, ax = plt.subplots(3, 2, figsize=size_,
                                subplot_kw={'projection': wcs})
         p, q = 0, 0
@@ -1815,24 +1794,25 @@ def Residue_maps(name='NGC5457', rbin=51, dbin=100, tbin=90, SigmaDoff=2.,
         fig.colorbar(cax, ax=ax[p, q])
         ax[p, q].set_title(r'Reduced $\chi^2$')
         p, q = 1, 1
-        cax = ax[p, q].imshow(residue_map,
+        cax = ax[p, q].imshow(residual_map,
                               origin='lower', cmap=cmap0)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue')
+        ax[p, q].set_title('residual')
         p, q = 2, 0
-        cax = ax[p, q].imshow(residue_map / uncs_map[i], vmin=rmin, vmax=rmax,
+        cax = ax[p, q].imshow(residual_map / uncs_map[i], vmin=rmin, vmax=rmax,
                               origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue / Uncertainty')
+        ax[p, q].set_title('residual / Uncertainty')
         p, q = 2, 1
-        cax = ax[p, q].imshow(residue_map / sed_map, vmin=romin, vmax=romax,
+        cax = ax[p, q].imshow(residual_map / sed_map, vmin=romin, vmax=romax,
                               origin='lower', cmap=cmap2)
         fig.colorbar(cax, ax=ax[p, q])
-        ax[p, q].set_title('Residue / Observation')
+        ax[p, q].set_title('residual / Observation')
         fig.suptitle(titles[i] + ' (FBT)')
         fig.tight_layout()
-        fig.savefig('output/_2X2Residue_Map_' + titles[i] + '_FBT_' + method +
-                    '.png')
+        with np.errstate(invalid='ignore'):
+            fig.savefig('output/_2X2residual_Map_' + titles[i] + '_FBT_' +
+                        method + '.png')
         plt.close(fig)
     """
     End plotting
