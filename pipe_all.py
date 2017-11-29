@@ -1,6 +1,6 @@
 # from generating import generator
-from fitting import fitting
-from plotting import plot_dust
+from pipe_fit import fitting
+from pipe_plot import plot_dust
 
 method_abbrs = ['EF', 'FB', 'BEMFB', 'FBWD', 'BEMFBFL']
 method_abbrs = ['BEMFBFL']
