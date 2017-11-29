@@ -7,3 +7,5 @@
 *.csv
 output/NGC5457_pdf.csv
 *.pdf
+*.ini
+*.pyc

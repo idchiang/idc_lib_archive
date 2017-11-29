@@ -1,4 +1,4 @@
-from idc_lib.idc_plot import read_dust_file as rdf
+from idc_lib.idc_plot import Dust_Plots
 # from idc_lib.idc_plot import plot_single_pixel as psp
 """
 Ref:
@@ -17,22 +17,18 @@ Corner:
 all_objects = ['IC2574', 'NGC0628', 'NGC0925', 'NGC2841', 'NGC2976', 'NGC3077',
                'NGC3184', 'NGC3198', 'NGC3351', 'NGC3521', 'NGC3627',
                'NGC4736', 'NGC5055', 'NGC5457', 'NGC6946', 'NGC7331']
-SST = ['NGC0628', 'NGC3198']  # SST for "Small Scale Test"
-SSST = ['NGC0628']  # SSST for "Super Small Scale Test"
 """
 
 M101 = ['NGC5457']  # Currently focusing on NGC5457
 
 
 # Qt: Session management error: Could not open network socket
-def read(test=0, samples=M101, off=90., cmap0='gist_heat',
-         dr25=0.025, ncmode=False, cmap1='Reds', cmap2='seismic'):
-    samples = [samples] if type(samples) == str else samples
-    print('Fix beta? (1 for fix, 0 for varying)')
-    fixed_beta = bool(int(input()))
-    print('Fix Temperature? (1 for fix, 0 for varying)')
-    fixed_T = bool(int(input()))
-    for sample in samples:
-        rdf(sample, fixed_beta=fixed_beta, fixed_T=fixed_T)
+def plot_dust(methods=['EF', 'FB', 'BEMFBFL', 'BEMFB', 'FBWD']):
+    samples = ['NGC5457']
+    #
+    plots = Dust_Plots()
+    plots.Load_and_Sum(samples, methods)
 
-read()
+
+if __name__ == '__main__':
+    plot_dust()

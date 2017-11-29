@@ -2,13 +2,13 @@ import astropy.io.fits as pyfits
 import os
 import numpy as np
 
-def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
 
+def gal_data(names=None, data=None, all=False, galdata_dir=None, tag=None):
     if not names and not all and not tag:
         print('Need a name to find a galaxy. Returning empty structure')
         return None
 
-    if not data_dir:
+    if not galdata_dir:
         galbase_dir, this_filename = os.path.split(__file__)
         galdata_dir = os.path.join(galbase_dir, "gal_data")
 
@@ -19,7 +19,6 @@ def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
         data = hdulist[1].data
         hdulist.close()
 
-
     # ALL DATA ARE DESIRED
     if all:
         return data
@@ -28,7 +27,8 @@ def gal_data(names=None, data=None, all=False, data_dir=None, tag=None):
     if tag is not None:
         n_data = len(data)
         keep = np.ones(n_data)
-        # survey_file = os.path.join(galdata_dir, 'survey_' + tag.lower() + '.txt')
+        # survey_file = os.path.join(galdata_dir, 'survey_' + tag.lower() +
+        #                            '.txt')
         # gals = np.genfromtxt(survey_file, dtype='string')
 
         for i in range(n_data):

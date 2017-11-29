@@ -19,12 +19,13 @@ Corner:
 M101 = ['NGC5457']  # Currently focusing on NGC5457
 
 
-def fitting(samples=M101, cov_mode=True, fixed_beta=None, method='001111'):
-    if (fixed_beta is None):
-        print('Fixing beta? (1 for fix, 0 for varying)')
-        fixed_beta = bool(int(input()))
+def fitting(samples=M101, cov_mode=True,
+            method_abbrs=['EF', 'FB', 'BEMFB', 'FBPT', 'PB', 'FBWD'],
+            del_model=True):
     for sample in samples:
-        fdd(sample, fixed_beta=fixed_beta, method=method)
+        for method_abbr in method_abbrs:
+            fdd(sample, cov_mode=cov_mode, method_abbr=method_abbr,
+                del_model=del_model)
 
 
 if __name__ == "__main__":

@@ -1,11 +1,11 @@
+import os
 import numpy as np
 import pandas as pd
 import astropy.units as u
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, Angle
+from astropy.coordinates import Angle
 from sklearn import linear_model
-# from scipy.stats import norm
 from reproject import reproject_exact
 from reproject import reproject_interp
 from h5py import File
@@ -40,8 +40,7 @@ class MGS(object):
         for name in names:
             self.add_galaxy(name, surveys)
 
-    def add_galaxy(self, name, surveys, filenames=None, uncfn=None,
-                   GALEX_NAN=True):
+    def add_galaxy(self, name, surveys, filenames=None, uncfn=None):
         """  Import fits files from one galaxy """
         print('Importing', len(surveys), 'fits files of', name + '...')
         tic = clock()
@@ -51,7 +50,7 @@ class MGS(object):
             self.df = self.df.drop(name)
         except KeyError:
             s = pd.Series(name=name)
-            temp_data = gal_data(name)
+            temp_data = gal_data(name, galdata_dir='data/gal_data')
             s['DIST_MPC'] = temp_data.field('DIST_MPC')[0]
             s['RA_RAD'] = Angle(temp_data.field('RA_DEG')[0] * u.deg).rad
             s['DEC_RAD'] = Angle(temp_data.field('DEC_DEG')[0] * u.deg).rad
@@ -134,12 +133,8 @@ class MGS(object):
                     uncfn = 'data/KINGFISH/' + name1 + name2 + \
                             '_S500_110_SSS_111_Model_SurfBr_Mdust_unc.fits.gz'
                 elif survey[:5] == 'GALEX':
-                    if GALEX_NAN:
-                        filename = 'data/GALEX/' + name1 + '_' + name2 + \
-                            '_I_' + survey[6:] + '_d2009_learn.fits'
-                    else:
-                        filename = 'data/GALEX/' + name1 + '_' + name2 + \
-                            '_I_' + survey[6:] + '_d2009.fits.gz'
+                    filename = 'data/GALEX/' + name1 + '_' + name2 + \
+                        '_I_' + survey[6:] + '_d2009.fits.gz'
                 elif survey[:4] == 'MIPS':
                     filename = 'data/MIPS/' + name1 + '_' + name2 + \
                         '_I_MIPS' + survey[5:] + '_d2009.fits.gz'
@@ -224,46 +219,49 @@ class MGS(object):
                 # Converting Jy/pixel to MJy/sr
                 data *= (np.pi / 36 / 18)**(-2) / ps[0] / ps[1]
             elif (survey[:5] == 'GALEX'):
-                if not GALEX_NAN:
-                    data *= 1.073E-10 * (np.pi / 3600 / 180)**(-2) / ps[0] / \
-                        ps[1]
-                    xcm, ycm = float(hdr['CRPIX1']), float(hdr['CRPIX1'])
-                    coords = np.array(np.meshgrid(np.arange(data.shape[1]),
-                                                  np.arange(data.shape[0]))
-                                      ).T.astype(float)
-                    # 1470 pixels from center to radius
-                    # 2000 from center to right-most boarder
-                    # But the initial max is at the corners...
-                    zeroCount = 0
-                    ii = 0
-                    while(True):
-                        ii += 1
-                        radii = np.sqrt((coords[:, :, 0] - xcm)**2 +
-                                        (coords[:, :, 1] - ycm)**2)
-                        r = np.max(radii) / np.sqrt(2)
-                        with np.errstate(invalid='ignore'):
-                            rs = np.linspace(0, r, 3000)
-                            for i in range(len(rs))[::-1]:
-                                if np.sum(data[radii > rs[i]] > 0) > 0:
-                                    r = rs[i]
-                                    currentCount = np.sum(radii > rs[i + 1])
-                                    if currentCount > zeroCount:
-                                        zeroCount = currentCount
-                                        currentMask = radii > rs[i + 1]
-                                    break
-                            DeltaX = (np.mean(coords[:, :, 0][(radii > r) *
-                                              (data > 0)]) - xcm) / r
-                            DeltaY = (np.mean(coords[:, :, 1][(radii > r) *
-                                              (data > 0)]) - ycm) / r
-                            if (DeltaX**2 + DeltaY**2 < 0.4**2) | \
-                                    (currentCount < zeroCount):
+                data *= 1.073E-10 * (np.pi / 3600 / 180)**(-2) / ps[0] / \
+                    ps[1]
+                filename2 = 'data/GALEX/' + name1 + '_' + name2 + \
+                    '-fd-rrhr.fits.gz'
+                mask = fits.getdata(filename2, 0, header=False)
+                data[mask < 0] = np.nan
+                """
+                xcm, ycm = float(hdr['CRPIX1']), float(hdr['CRPIX1'])
+                coords = np.array(np.meshgrid(np.arange(data.shape[1]),
+                                              np.arange(data.shape[0]))
+                                  ).T.astype(float)
+                # 1470 pixels from center to radius
+                # 2000 from center to right-most boarder
+                # But the initial max is at the corners...
+                zeroCount = 0
+                ii = 0
+                while(True):
+                    ii += 1
+                    radii = np.sqrt((coords[:, :, 0] - xcm)**2 +
+                                    (coords[:, :, 1] - ycm)**2)
+                    r = np.max(radii) / np.sqrt(2)
+                    with np.errstate(invalid='ignore'):
+                        rs = np.linspace(0, r, 3000)
+                        for i in range(len(rs))[::-1]:
+                            if np.sum(data[radii > rs[i]] > 0) > 0:
+                                r = rs[i]
+                                currentCount = np.sum(radii > rs[i + 1])
+                                if currentCount > zeroCount:
+                                    zeroCount = currentCount
+                                    currentMask = radii > rs[i + 1]
                                 break
-                            xcm += DeltaX
-                            ycm += DeltaY
-                            r *= 1.05
-                    data[currentMask] = np.nan
-                if (survey == 'GALEX_FUV') & (name == 'NGC5457'):
-                    data[2109:2237, 3175:3426] = np.nan
+                        DeltaX = (np.mean(coords[:, :, 0][(radii > r) *
+                                          (data > 0)]) - xcm) / r
+                        DeltaY = (np.mean(coords[:, :, 1][(radii > r) *
+                                          (data > 0)]) - ycm) / r
+                        if (DeltaX**2 + DeltaY**2 < 0.4**2) | \
+                                (currentCount < zeroCount):
+                            break
+                        xcm += DeltaX
+                        ycm += DeltaY
+                        r *= 1.05
+                data[currentMask] = np.nan
+                """
             s[survey + '_PS'] = ps
             s[survey + '_HDR'] = hdr
             s[survey + '_CVL'] = True if survey == 'SPIRE_500' else False
@@ -574,8 +572,13 @@ class MGS(object):
             hdr_in = self.df.loc[name][course_survey + '_HDR']
             hdr_in['CRPIX1'] -= lc[1, 0]
             hdr_in['CRPIX2'] -= lc[0, 0]
-            fn = 'data/PROCESSED/' + name + '/' + course_survey + '_RGD.fits'
-            hdu = fits.PrimaryHDU(self.df.loc[name][course_survey],
+            fn = 'data/PROCESSED/' + name + '/' + course_survey + '_CRP.fits'
+            try:
+                os.remove(fn)
+            except FileNotFoundError:
+                pass
+            hdu = fits.PrimaryHDU(self.df.loc[name][course_survey]
+                                  [lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]],
                                   header=hdr_in)
             hdu.writeto(fn)
         print("   --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
@@ -772,26 +775,27 @@ class MGS(object):
         for name in names:
             print('Saving', name, 'data...')
             tic = clock()
-
-            with File('output/RGD_data.h5', 'a') as hf:
-                grp = hf.create_group(name)
+            try:
+                with File('hdf5_MBBDust/' + name + '.h5', 'a') as hf:
+                    pass
+            except OSError:
+                os.mkdir('hdf5_MBBDust')
+            with File('hdf5_MBBDust/' + name + '.h5', 'a') as hf:
+                grp = hf.require_group('Regrid')
                 for survey in surveys:
-                    unc = False if survey in no_unc else True
-                    grp.create_dataset(survey, data=self.df.loc[name][survey])
-                    if unc:
-                        grp.create_dataset(survey + '_UNCMAP',
-                                           data=self.df.loc[name][survey +
-                                                                  '_UNCMAP'])
+                    grp[survey] = self.df.loc[name][survey]
+                    if survey not in no_unc:
+                        grp[survey + '_UNCMAP'] = \
+                            self.df.loc[name][survey + '_UNCMAP']
                     if survey[:9] == 'HERSCHEL_':
-                        grp.create_dataset(survey + '_BKGCOV',
-                                           data=self.df.loc[name]
-                                           [survey + '_BKGCOV'])
-                        grp.create_dataset(survey + '_DISKMASK',
-                                           data=self.df.loc[name]
-                                           [survey + '_DISKMASK'])
+                        grp[survey + '_BKGCOV'] = \
+                            self.df.loc[name][survey + '_BKGCOV']
+                        grp[survey + '_DISKMASK'] = \
+                            self.df.loc[name][survey + '_DISKMASK']
             print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
 
+"""
 def metallicity_to_coordinate(names=['NGC5457']):
     names = [names] if type(names) == str else names
     # Reading & convolving
@@ -822,3 +826,4 @@ def metallicity_to_coordinate(names=['NGC5457']):
         df['new_c1'] = coords[:, 0]
         df['new_c2'] = coords[:, 1]
         df.to_csv('output/Metal_' + name + '.csv')
+"""
