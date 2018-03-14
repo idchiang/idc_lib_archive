@@ -1,27 +1,42 @@
-from h5py import File
-import numpy as np
-import matplotlib.pyplot as plt
-from astropy.io import fits
-from astropy.wcs import WCS
+# from generating import generator
+import os
+from idc_lib.idc_plot import Dust_Plots
+# from idc_lib.idc_fitting import fit_dust_density as fdd
+# import numpy as np
 
+os.system('clear')  # on linux / os x
 
-def plot_PACS_100_negs():
-    name = 'NGC5457'
-    with File('output/RGD_data.h5', 'r') as hf:
-        grp = hf[name]
-        sed = np.array(grp['HERSCHEL_011111'])[:, :, 0]
-    with File('output/Voronoi_data.h5', 'r') as hf:
-        grp = hf[name + '_011111']
-        binlist = np.array(grp['BINLIST'])
-        binmap = np.array(grp['BINMAP'])
-        aSED = np.array(grp['Herschel_SED'])[:, 0]
-    negs_mask = np.zeros_like(sed).astype(bool)
-    for i in range(len(binlist)):
-        if aSED[i] < 0:
-            negs_mask[binmap == binlist[i]] = True
-    plt.hist(sed[negs_mask], bins=25, range=(-4, 4))
-    #
-    fn = 'data/PACS/NGC_5457_I_100um_k2011.fits.gz'
-    data, hdr = fits.getdata(fn, 0, header=True)
-    w = WCS(hdr, naxis=2)
-    return w, sed
+name = 'NGC5457'
+
+""" 10 random points with high PL r_chi^2
+plots = Dust_Plots()
+for m in ['BE', 'PL']:
+    plots.Load_Data(name, m)
+count = 0
+d = plots.d[name]
+xs, ys = np.meshgrid(np.arange(d['binmap'].shape[0]),
+                     np.arange(d['binmap'].shape[1]))
+range_ = [i for i in range(len(d['binlist']))]
+np.random.shuffle(range_)
+for i in range_:
+    if (d['PL']['archi2'][i] > 4) & (d['BE']['archi2'][i] < 2):
+        count += 1
+        mask = d['binmap'] == d['binlist'][i]
+        plots.x, plots.y = xs[mask][0], ys[mask][0]
+        plots.example_model(name, 'BE')
+        plots.example_model(name, 'PL')
+    if count == 10:
+        break
+"""
+
+all_ = ['SE', 'FB', 'BE', 'WD', 'PL']
+plots = Dust_Plots()
+for m in all_:
+    plots.Load_Data(name, m)
+    plots.STBC(name, m, use_mask=True)
+# plots.temperature_profiles_merge(name)
+# plots.example_model_merged(name)
+# plots.pdf_profiles_merge(name)
+# plots.pdf_profiles(name, 'BE')
+# plots.kappa160_fH2()
+# plots.metallicity_contour()

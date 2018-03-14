@@ -1,17 +1,21 @@
-from time import clock
+from time import clock, ctime
 from h5py import File
+import multiprocessing as mp
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import pandas as pd
 import astropy.units as u
 from astropy.constants import c
-from sklearn import linear_model
+from corner import corner
+from scipy.stats import pearsonr
 # from scipy.stats.stats import pearsonr
-# import corner
 from .idc_voronoi import voronoi_m
-from .idc_functions import map2bin, SEMBB, BEMBB, WD
+from .idc_functions import map2bin, SEMBB, BEMBB, WD, PowerLaw, B_fast
+from .idc_functions import WDT, MWT, Umax
+from .z0mg_RSRF import z0mg_RSRF
 plt.ioff()
+my_beta_f = 1.8
 
 # Grid parameters
 logsigma_step = 0.025
@@ -32,10 +36,18 @@ max_lambda_c = 600
 WDfrac_step = 0.002
 min_WDfrac = 0.0
 max_WDfrac = 0.05
+alpha_step = 0.1  # Remember to avoid alpha==1
+min_alpha = 1.1
+max_alpha = 3.0
+loggamma_step = 0.2
+min_loggamma = -4
+max_loggamma = 0
+logUmin_step = 0.1
+min_logUmin = -2.
+max_logUmin = 1.5
 
 # Dust fitting constants
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
-nu = (c / wl / u.um).to(u.Hz)
 
 FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15,
         'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04,
@@ -57,6 +69,10 @@ cali_mat2 = np.array([[PAU + PRU, PAU, 0, 0, 0],
 calerr_matrix2 = np.array([PAU + PRU, PAU + PRU, SAU + SRU, SAU + SRU,
                            SAU + SRU]) ** 2
 del PAU, PRU, SAU, SRU
+
+ndims = {'SE': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4, 'WD': 3,
+         'BE': 3, 'PL': 4}
+parallel_rounds = {'SE': 3, 'FB': 1, 'BE': 3, 'WD': 3, 'PL': 12}
 
 
 def half_integer(num):
@@ -85,23 +101,42 @@ def normalize_pdf(pdf):
     return pdf / np.sum(pdf)
 
 
-def fit_DataY(DataX, DataY, DataY_err, err_bdr=0.3, rbin=51, dbin=250):
-    print('Calculating predicted parameter...')
+def fit_DataY(DataX, DataY, DataY_err, err_bdr=0.3):
+    print('Calculating predicted parameter... (' + ctime() + ')')
     tic = clock()
-    nanmask = np.isnan(np.sum(DataY, axis=1) + DataY_err +
-                       np.sum(DataX, axis=1))
-    mask = ((DataY_err / DataY.reshape(-1)) < err_bdr).reshape(-1) * ~nanmask
-    sigma_n2 = (DataY_err / DataY.reshape(-1))**(-2)
-    print('Total number of bins:', mask.size)
-    print('Total number of good fits:', mask.sum())
-    regr = linear_model.LinearRegression()
-    regr.fit(DataX[mask], DataY[mask], sigma_n2[mask])
-    coef_ = np.array(regr.coef_[0] + regr.intercept_)
-    DataX[nanmask] = np.zeros(DataX.shape[1])
-    DataY_pred = regr.predict(DataX)
+    nanmask = np.isnan(DataY + DataY_err + DataX)
+    mask = ((DataY_err / DataY) < err_bdr) * ~nanmask
+    print('Number of nan points:', np.sum(nanmask))
+    print('Number of negative yerr:', np.sum(DataY_err < 0))
+    print('Number of zero yerr:', np.sum(DataY_err == 0))
+    print('Number of available data:', mask.sum())
+    print('Correlation between DataX and DataY:',
+          pearsonr(DataX[mask], DataY[mask])[0])
+    popt, pcov = np.polyfit(x=DataX, y=DataY, deg=1, w=1/DataY_err, cov=True)
+    perr = np.sqrt(np.diag(pcov))
+    print('Fitting coef:', popt)
+    print('Fitting err :', perr)
+    DataX[nanmask] = 0.0
+    DataY_pred = DataX * popt[0] + popt[1]
     DataY_pred[nanmask] = np.nan
     print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
-    return DataY_pred.reshape(-1), coef_
+    return DataY_pred, popt
+
+
+def cal_and_print_err(var, idx, mask, pr_cp, varname):
+    ML = var[idx]
+    err = cal_err(var[mask], pr_cp, ML)
+    print('Best fit', varname + ':', ML)
+    print('    ' + ' ' * len(varname) + 'error:', err)
+
+
+def exp_and_error(var, pr, varname):
+    Z = np.sum(pr)
+    expected = np.sum(var * pr) / Z
+    err = cal_err(var.flatten(), pr.flatten(), expected)
+    print('Expected', varname + ':', expected)
+    print('    ' + ' ' * len(varname) + 'error:', err)
+    return expected, err
 
 
 """
@@ -139,25 +174,29 @@ def _lnprob(theta, x, y, inv_sigma2):
 """
 
 
-def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
-                     method_abbr='FB', del_model=False):
+def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
+                     lambda_c_f=300.0, method_abbr='FB', del_model=False,
+                     fake=False, nop=5, targetSN=5):
     """
     Should have unique names for all the methods I am currently using:
-        EF, FB, FBPT, PB, BEMFB
+        EF, FB, BE, WD, PL
     """
-    targetSN = 5
-    ndims = {'EF': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4, 'FBWD': 3,
-             'BEMFBFL': 3}
     try:
-        ndims[method_abbr]
+        with File('hdf5_MBBDust/Calibration.h5', 'r') as hf:
+            grp = hf[method_abbr]
+            kappa160 = grp['kappa160'].value
     except KeyError:
-        raise KeyError("The input method \"" + method_abbr +
-                       "\" is not supported yet!")
+        print('This method is not calibrated yet!! Starting calibration...')
+        kappa_calibration(method_abbr, beta_f=beta_f, lambda_c_f=lambda_c_f,
+                          nop=nop)
+        with File('hdf5_MBBDust/Calibration.h5', 'r') as hf:
+            grp = hf[method_abbr]
+            kappa160 = grp['kappa160'].value
     if cov_mode is None:
         print('COV mode? (1 for COV, 0 for non-COV)')
         cov_mode = bool(int(input()))
     print('################################################')
-    print('   ' + name + '-' + method_abbr + ' fitting')
+    print('   ' + name + '-' + method_abbr + ' fitting (' + ctime() + ')')
     print('################################################')
     # Dust density in Solar Mass / pc^2
     # kappa_lambda in cm^2 / g
@@ -173,6 +212,10 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         D = grp['DIST_MPC'].value
         cosINCL = grp['cosINCL'].value
         dp_radius = grp['RADIUS_KPC'].value
+        if fake:
+            grp = hf['Fake']
+            subgrp = grp['SED']
+            sed = subgrp[method_abbr].value
 
     binmap = np.full_like(total_gas, np.nan, dtype=int)
     # Voronoi binning
@@ -181,6 +224,10 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
     try:
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Bin']
+            if fake:
+                grp1 = hf['Fake']
+                grp2 = grp1['Bin']
+                grp = grp2[method_abbr]
             binlist = grp['BINLIST'].value
             binmap = grp['BINMAP'].value
             gas_avg = grp['GAS_AVG'].value
@@ -215,10 +262,12 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
                              (dp_radius < (i + 1) * fwhm_radius))
             masks.append(dp_radius >= (nlayers - 1) * fwhm_radius)
         # test image: original layers
+        """
         testimage1 = np.full_like(dp_radius, np.nan)
         for i in range(nlayers):
             testimage1[masks[i]] = np.sin(i)
         testimage1[~diskmask] = np.nan
+        """
         #
         for i in range(nlayers - 1, -1, -1):
             judgement = np.sum(signal_d[masks[i][diskmask]]) / \
@@ -232,10 +281,12 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
                     del masks[1]
         nlayers = len(masks)
         # test image: combined layers #
+        """
         testimage2 = np.full_like(dp_radius, np.nan)
         for i in range(nlayers):
             testimage2[masks[i]] = np.sin(i)
         testimage2[~diskmask] = np.nan
+        """
         #######################################
         masks = [masks[i][diskmask] for i in range(nlayers)]
         """ Modify radial bins here """
@@ -257,6 +308,7 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         for i in range(len(signal_d)):
             binmap[y_d[i], x_d[i]] = binNum[i]
         binlist = np.unique(binNum)
+        """
         temp_snr = sed / noise4snr
         testimage0 = np.empty_like(testimage1, dtype=float)
         for i in range(sed.shape[0]):
@@ -278,14 +330,19 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         ax[1, 1].imshow(testimage3, origin='lower', cmap='jet')
         ax[1, 1].set_title('Final bins')
         fig.tight_layout()
-        pp = PdfPages('output/_Voronnoi' + name + '.pdf')
+        if fake:
+            fn = '_FAKE_Voronnoi' + name + '_' + method_abbr + '.pdf'
+        else:
+            fn = '_Voronnoi' + name + '.pdf'
+        pp = PdfPages('output/' + fn)
         pp.savefig(fig)
         pp.close()
-        pp = PdfPages('hdf5_MBBDust/' + name + '_Voronnoi.pdf')
+        pp = PdfPages('hdf5_MBBDust/' + fn)
         pp.savefig(fig)
         pp.close()
         plt.close('all')
         del testimage0, testimage1, testimage2, testimage3
+        """
         radius_avg, gas_avg, sed_avg, cov_n1s, inv_sigma2s = [], [], [], [], []
         for b in binlist:
             bin_ = binmap == b
@@ -315,7 +372,11 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
             # Finally everything for variance is here...
             inv_sigma2s.append(1 / (bkg2_avg + calerr2 + unc2_avg))
         with File('hdf5_MBBDust/' + name + '.h5', 'a') as hf:
-            grp = hf.create_group('Bin')
+            grp = hf.require_group('Bin')
+            if fake:
+                grp1 = hf['Fake']
+                grp2 = grp1.require_group('Bin')
+                grp = grp2.require_group(method_abbr)
             grp['BINLIST'] = binlist
             grp['BINMAP'] = binmap
             grp['GAS_AVG'] = gas_avg
@@ -331,10 +392,10 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
             grp = hf['Fitting_results']
             if method_abbr in ['PB']:
                 try:
-                    subgrp = grp['EF']
+                    subgrp = grp['SE']
                 except KeyError:
-                    fit_dust_density(name, cov_mode, beta_f, 'EF')
-                    subgrp = grp['EF']
+                    fit_dust_density(name, cov_mode, beta_f, 'SE')
+                    subgrp = grp['SE']
                 DataX = radius_avg.reshape(-1, 1)
                 DataY = subgrp['beta'].value.reshape(-1, 1)
                 DataY_err = subgrp['beta_err'].value
@@ -367,50 +428,173 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
     tic = clock()
     """ Grid parameters """
     """
-    ndims = {'EF': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4}
-    'EF': np.meshgrid(logsigmas, Ts, betas)
+    ndims = {'SE': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4}
+    'SE': np.meshgrid(logsigmas, Ts, betas)
     'FB': np.meshgrid(logsigmas, Ts)
     'BEMFB': np.meshgrid(logsigmas, Ts, lambda_cs, beta2s)
     """
-    logsigmas = np.arange(min_logsigma, max_logsigma, logsigma_step)
     logsigmas_1d = np.arange(min_logsigma, max_logsigma, logsigma_step)
-    Ts = np.arange(min_T, max_T, T_step)
     Ts_1d = np.arange(min_T, max_T, T_step)
     betas = beta_f
-    if method_abbr == 'EF':
+    if method_abbr == 'PL':
+        alphas_1d = np.arange(min_alpha, max_alpha, alpha_step)
+        loggammas_1d = np.arange(min_loggamma, max_loggamma, loggamma_step)
+        logUmins_1d = np.arange(min_logUmin, max_logUmin, logUmin_step)
+        logsigmas, alphas, loggammas, logUmins = \
+            np.meshgrid(logsigmas_1d, alphas_1d, loggammas_1d, logUmins_1d)
+    else:
+        betas = beta_f
+    if method_abbr == 'SE':
         betas_1d = np.arange(min_beta, max_beta, beta_step)
-        logsigmas, Ts, betas = np.meshgrid(logsigmas, Ts, betas_1d)
+        logsigmas, Ts, betas = np.meshgrid(logsigmas_1d, Ts_1d, betas_1d)
     elif method_abbr == 'FB':
-        logsigmas, Ts = np.meshgrid(logsigmas, Ts)
+        logsigmas, Ts = np.meshgrid(logsigmas_1d, Ts_1d)
     elif method_abbr == 'FBPT':
         Ts_1d = np.unique(t_pred)
-        logsigmas, Ts = np.meshgrid(logsigmas, Ts_1d)
+        logsigmas, Ts = np.meshgrid(logsigmas_1d, Ts_1d)
     elif method_abbr == 'PB':
         betas_1d = np.unique(beta_pred)
-        logsigmas, betas, Ts = np.meshgrid(logsigmas, betas_1d, Ts)
-    elif method_abbr in ['BEMFB', 'BEMFBFL']:
+        logsigmas, betas, Ts = np.meshgrid(logsigmas_1d, betas_1d, Ts_1d)
+    elif method_abbr == 'BEMFB':
         beta2s_1d = np.arange(min_beta2, max_beta2, beta2_step)
         lambda_cs_1d = np.arange(min_lambda_c, max_lambda_c, lambda_c_step)
         logsigmas, Ts, lambda_cs, beta2s = \
-            np.meshgrid(logsigmas, Ts, lambda_cs_1d, beta2s_1d)
-    elif method_abbr == 'FBWD':
+            np.meshgrid(logsigmas_1d, Ts_1d, lambda_cs_1d, beta2s_1d)
+    elif method_abbr == 'BE':
+        beta2s_1d = np.arange(min_beta2, max_beta2, beta2_step)
+        logsigmas, Ts, beta2s = \
+            np.meshgrid(logsigmas_1d, Ts_1d, beta2s_1d)
+        lambda_cs = np.full(Ts.shape, lambda_c_f)
+    elif method_abbr == 'WD':
         WDfracs_1d = np.arange(min_WDfrac, max_WDfrac, WDfrac_step)
-        logsigmas, Ts, WDfracs = np.meshgrid(logsigmas, Ts, WDfracs_1d)
+        logsigmas, Ts, WDfracs = np.meshgrid(logsigmas_1d, Ts_1d, WDfracs_1d)
+    #
+    if method_abbr in ['WD', 'PL']:
+        Teff_bins = np.append(Ts_1d, Ts_1d[-1] + T_step)
+        Teff_bins -= T_step / 2.
+        if method_abbr == 'WD':
+            Teffs = Ts * (1 - WDfracs) + WDT * WDfracs
+        elif method_abbr == 'PL':
+            Umins = 10**logUmins
+            gammas = 10**loggammas
+            Ubar = np.empty_like(Umins)
+            mask = alphas == 2
+            Ubar[mask] = gammas[mask] * \
+                (alphas[mask] - 1) / (alphas[mask] - 2) * \
+                (Umax**(2 - alphas[mask]) - Umins[mask]**(2 - alphas[mask])) /\
+                (Umax**(1 - alphas[mask]) - Umins[mask]**(1 - alphas[mask])) +\
+                (1 - gammas[mask]) * Umins[mask]
+            Ubar[~mask] = Umins[~mask] * \
+                ((1 - gammas[~mask]) + gammas[~mask] *
+                 np.log(Umax / Umins[~mask]) / (1 - Umins[~mask] / Umax))
+            del mask, Umins, gammas
+            Teffs = MWT * Ubar**(1 / 6.)
+            del Ubar
     #
     if del_model:
         with File('hdf5_MBBDust/Models.h5', 'a') as hf:
-            del hf[method_abbr]
+            try:
+                del hf[method_abbr]
+            except KeyError:
+                pass
     try:
-        if method_abbr == 'BEMFBFL':
-            with File('hdf5_MBBDust/Models.h5', 'r') as hf:
-                models_ = hf['BEMFB'].value
-        else:
-            with File('hdf5_MBBDust/Models.h5', 'r') as hf:
-                models_ = hf[method_abbr].value
+        with File('hdf5_MBBDust/Models.h5', 'r') as hf:
+            models_ = hf[method_abbr].value
     except (OSError, KeyError):
-        models_ = np.zeros(list(Ts.shape) + [5])
+        if method_abbr in ['BEMFB', 'BE']:
+            def fitting_model(wl):
+                return BEMBB(wl, 10**logsigmas, Ts, betas, lambda_cs, beta2s,
+                             kappa160=kappa160)
+        elif method_abbr in ['WD']:
+            def fitting_model(wl):
+                return WD(wl, 10**logsigmas, Ts, betas, WDfracs,
+                          kappa160=kappa160)
+        elif method_abbr in ['PL']:
+            def fitting_model(wl):
+                return PowerLaw(wl, 10**logsigmas, alphas, 10**loggammas,
+                                logUmins, beta=betas, kappa160=kappa160)
+        else:
+            def fitting_model(wl):
+                return SEMBB(wl, 10**logsigmas, Ts, betas,
+                             kappa160=kappa160)
+
+        def split_herschel(ri, r_, rounds, _wl, wlr, output):
+            tic = clock()
+            rw = ri + r_ * nop
+            lenwls = wlr[rw + 1] - wlr[rw]
+            last_time = clock()
+            result = np.zeros(list(logsigmas.shape) + [lenwls])
+            print("   --process", ri, "starts... (" + ctime() + ") (round",
+                  (r_ + 1), "of", str(rounds) + ")")
+            for i in range(lenwls):
+                result[..., i] = fitting_model(_wl[i + wlr[rw]])
+                current_time = clock()
+                # print progress every 10 mins
+                if current_time > last_time + 600.:
+                    last_time = current_time
+                    print("     --process", ri,
+                          str(round(100. * (i + 1) / lenwls, 1)) +
+                          "% Done. (round", (r_ + 1), "of", str(rounds) + ")")
+            output.put((ri, result))
+            print("   --process", ri, "Done. Elapsed time:",
+                  round(clock()-tic, 3), "s. (" + ctime() + ")")
+
+        models_ = np.zeros(list(logsigmas.shape) + [5])
+        timeout = 1e-6
         # Applying RSRFs to generate fake-observed models
-        print(" --Constructing PACS RSRF model...")
+        instrs = ['PACS', 'SPIRE']
+        rounds = parallel_rounds[method_abbr]
+        for instr in range(2):
+            print(" --Constructing", instrs[instr], "RSRF model... (" +
+                  ctime() + ")")
+            ttic = clock()
+            _rsrf = pd.read_csv("data/RSRF/" + instrs[instr] + "_RSRF.csv")
+            _wl = _rsrf['Wavelength'].values
+            h_models = np.zeros(list(logsigmas.shape) + [len(_wl)])
+            wlr = [int(ri * len(_wl) / float(nop * rounds)) for ri in
+                   range(nop * rounds + 1)]
+            if instr == 0:
+                rsps = [_rsrf['PACS_100'].values,
+                        _rsrf['PACS_160'].values]
+                range_ = range(0, 2)
+            elif instr == 1:
+                rsps = [[], [], _rsrf['SPIRE_250'].values,
+                        _rsrf['SPIRE_350'].values,
+                        _rsrf['SPIRE_500'].values]
+                range_ = range(2, 5)
+            del _rsrf
+            # Parallel code
+            for r_ in range(rounds):
+                print("\n   --" + method_abbr, instrs[instr] + ":Round",
+                      (r_ + 1), "of", rounds, '\n')
+                q = mp.Queue()
+                processes = [mp.Process(target=split_herschel,
+                             args=(ri, r_, rounds, _wl, wlr, q))
+                             for ri in range(nop)]
+                for p in processes:
+                    p.start()
+                for p in processes:
+                    p.join(timeout)
+                for p in processes:
+                    ri, result = q.get()
+                    print("     --Got result from process", ri)
+                    rw = ri + r_ * nop
+                    h_models[..., wlr[rw]:wlr[rw+1]] = result
+                    del ri, result
+                del processes, q
+            # Parallel code ends
+            print("   --Calculating response function integrals")
+            for i in range_:
+                models_[..., i] = \
+                    np.sum(h_models * rsps[i], axis=-1) / \
+                    np.sum(rsps[i] * _wl / wl[i])
+            del _wl, rsps, h_models, range_
+            print("   --Done. Elapsed time:", round(clock()-ttic, 3), "s.\n")
+        """
+        # version before parallel computing
+        models_ = np.zeros(list(logsigmas.shape) + [5])
+        # Applying RSRFs to generate fake-observed models
+        print(" --Constructing PACS RSRF model... (" + ctime() + ')')
         ttic = clock()
         pacs_rsrf = pd.read_csv("data/RSRF/PACS_RSRF.csv")
         pacs_wl = pacs_rsrf['Wavelength'].values
@@ -418,19 +602,25 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
                  pacs_rsrf['PACS_160'].values]
         del pacs_rsrf
         #
-        pacs_models = np.zeros(list(Ts.shape) + [len(pacs_wl)])
-        if method_abbr in ['BEMFB', 'BEMFBFL']:
+        pacs_models = np.zeros(list(logsigmas.shape) + [len(pacs_wl)])
+        if method_abbr in ['BEMFB', 'BE']:
             for i in range(len(pacs_wl)):
                 pacs_models[..., i] = BEMBB(pacs_wl[i], 10**logsigmas, Ts,
-                                            betas, lambda_cs, beta2s)
-        elif method_abbr in ['FBWD']:
+                                            betas, lambda_cs, beta2s,
+                                            kappa160=kappa160)
+        elif method_abbr in ['WD']:
             for i in range(len(pacs_wl)):
                 pacs_models[..., i] = WD(pacs_wl[i], 10**logsigmas, Ts,
-                                         betas, WDfracs)
+                                         betas, WDfracs, kappa160=kappa160)
+        elif method_abbr in ['PL']:
+            for i in range(len(pacs_wl)):
+                pacs_models[..., i] = PowerLaw(pacs_wl[i], 10**logsigmas,
+                                               alphas, 10**loggammas, logUmins,
+                                               kappa160=kappa160)
         else:
             for i in range(len(pacs_wl)):
                 pacs_models[..., i] = SEMBB(pacs_wl[i], 10**logsigmas, Ts,
-                                            betas)
+                                            betas, kappa160=kappa160)
         for i in range(0, 2):
             models_[..., i] = \
                 np.sum(pacs_models * pacss[i], axis=-1) / \
@@ -438,7 +628,7 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         del pacs_wl, pacss, pacs_models
         print("   --Done. Elapsed time:", round(clock()-ttic, 3), "s.\n")
         ##
-        print(" --Constructing SPIRE RSRF model...")
+        print(" --Constructing SPIRE RSRF model... (" + ctime() + ')')
         ttic = clock()
         spire_rsrf = pd.read_csv("data/RSRF/SPIRE_RSRF.csv")
         spire_wl = spire_rsrf['Wavelength'].values
@@ -447,34 +637,38 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
                   spire_rsrf['SPIRE_500'].values]
         del spire_rsrf
         #
-        spire_models = np.zeros(list(Ts.shape) + [len(spire_wl)])
-        if method_abbr in ['BEMFB', 'BEMFBFL']:
+        spire_models = np.zeros(list(logsigmas.shape) + [len(spire_wl)])
+        if method_abbr in ['BEMFB', 'BE']:
             for i in range(len(spire_wl)):
                 spire_models[..., i] = BEMBB(spire_wl[i], 10**logsigmas,
-                                             Ts, betas, lambda_cs, beta2s)
-        elif method_abbr in ['FBWD']:
+                                             Ts, betas, lambda_cs, beta2s,
+                                             kappa160=kappa160)
+        elif method_abbr in ['WD']:
             for i in range(len(spire_wl)):
                 spire_models[..., i] = WD(spire_wl[i], 10**logsigmas,
-                                          Ts, betas, WDfracs)
+                                          Ts, betas, WDfracs,
+                                          kappa160=kappa160)
+        elif method_abbr in ['PL']:
+            for i in range(len(spire_wl)):
+                spire_models[..., i] = PowerLaw(spire_wl[i], 10**logsigmas,
+                                                alphas, 10**loggammas,
+                                                logUmins, kappa160=kappa160)
         else:
             for i in range(len(spire_wl)):
                 spire_models[..., i] = SEMBB(spire_wl[i], 10**logsigmas,
-                                             Ts, betas)
+                                             Ts, betas, kappa160=kappa160)
         for i in range(2, 5):
             models_[..., i] = \
                 np.sum(spire_models * spires[i], axis=-1) / \
                 np.sum(spires[i] * spire_wl / wl[i])
         del spire_wl, spires, spire_models
-        if method_abbr == 'BEMFBFL':
-            with File('hdf5_MBBDust/Models.h5', 'a') as hf:
-                hf['BEMFB'] = models_
-        else:
-            with File('hdf5_MBBDust/Models.h5', 'a') as hf:
-                hf[method_abbr] = models_
+        """
+        with File('hdf5_MBBDust/Models.h5', 'a') as hf:
+            hf[method_abbr] = models_
     """
     Start fitting
     """
-    print("Start fitting", name, "dust surface density...")
+    print("Start fitting", name, "dust surface density... (" + ctime() + ')')
     tic = clock()
     progress = 0
     sopt, serr, topt, terr, bopt, berr = [], [], [], [], [], []
@@ -483,19 +677,15 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
     b2_pdfs, lc_pdfs = [], []
     Wfopt, Wferr, Wf_pdfs = [], [], []
     achi2, ased_fit = [], []
+    gopt, gerr, g_pdfs = [], [], []
+    aopt, aerr, a_pdfs = [], [], []
+    uopt, uerr, u_pdfs = [], [], []
+    teff_pdfs = []
     if method_abbr in ['FBPT']:
         logsigmas = logsigmas[Ts_1d == Ts_1d[0]][0]
     elif method_abbr in ['PB']:
         logsigmas = logsigmas[betas_1d == betas_1d[0]][0]
         Ts = Ts[betas_1d == betas_1d[0]][0]
-    elif method_abbr in ['BEMFBFL']:
-        lambda_cf = 300.0
-        models = models_[:, :, lambda_cs_1d == lambda_cf, :]
-        logsigmas = logsigmas[:, :, lambda_cs_1d == lambda_cf, :]
-        Ts = Ts[:, :, lambda_cs_1d == lambda_cf, :]
-        beta2s = beta2s[:, :, lambda_cs_1d == lambda_cf, :]
-        print(models.shape)
-        del models_
     else:
         models = models_
         del models_
@@ -523,7 +713,7 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         achi2.append(np.nanmin(chi2))
         ased_fit.append(models[am_idx])
         """
-        method_abbrs = {'EF': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4}
+        method_abbrs = {'SE': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4}
         Special care in \Sigma_D: FBPT(1d)
         Special care in Temperature: FBPT
         Special care in \beta: PB(b_ML), EF(err)
@@ -544,6 +734,8 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         if method_abbr in ['FBPT']:
             topt.append(t_pred[i])
             terr.append(0.0)
+        elif method_abbr in ['PL']:
+            pass
         else:
             t_ML = Ts[am_idx]
             topt.append(t_ML)
@@ -552,29 +744,34 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
                 t_pdfs.append(normalize_pdf(np.sum(pr, axis=0)))
             else:
                 t_pdfs.append(normalize_pdf(np.sum(pr, axis=1)))
+        """ Effective temperature for WD and PL """
+        if method_abbr in ['WD', 'PL']:
+            teff_pdf = np.histogram(Teffs, bins=Teff_bins, weights=pr)[0]
+            teff_pdfs.append(teff_pdf / np.sum(teff_pdf))
         """ \beta """
-        if method_abbr in ['EF']:
-            b_ML = betas[am_idx]
-        elif method_abbr in ['PB']:
-            b_ML = beta_pred[i]
-        else:
-            b_ML = betas
-        bopt.append(b_ML)
-        if method_abbr in ['EF']:
-            berr.append(cal_err(betas[mask], pr_cp, b_ML))
-            b_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
-        else:
-            berr.append(0.0)
+        if method_abbr not in ['PL']:
+            if method_abbr in ['SE']:
+                b_ML = betas[am_idx]
+            elif method_abbr in ['PB']:
+                b_ML = beta_pred[i]
+            else:
+                b_ML = betas
+            bopt.append(b_ML)
+            if method_abbr in ['SE']:
+                berr.append(cal_err(betas[mask], pr_cp, b_ML))
+                b_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
+            else:
+                berr.append(0.0)
         """ BEMBB model related """
-        if method_abbr in ['BEMFB', 'BEMFBFL']:
+        if method_abbr in ['BEMFB', 'BE']:
             """ \lambda_c """
             if method_abbr == 'BEMFB':
                 lc_ML = lambda_cs[am_idx]
                 lcopt.append(lc_ML)
                 lcerr.append(cal_err(lambda_cs[mask], pr_cp, lc_ML))
                 lc_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
-            elif method_abbr == 'BEMFBFL':
-                lcopt.append(lambda_cf)
+            elif method_abbr == 'BE':
+                lcopt.append(lambda_c_f)
                 lcerr.append(0)
             """ \beta2 """
             b2_ML = beta2s[am_idx]
@@ -582,12 +779,29 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
             b2err.append(cal_err(beta2s[mask], pr_cp, b2_ML))
             b2_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1, 2))))
         """ Warm Dust related """
-        if method_abbr in ['FBWD']:
+        if method_abbr in ['WD']:
             """ WDfrac """
             Wf_ML = WDfracs[am_idx]
             Wfopt.append(Wf_ML)
             Wferr.append(cal_err(WDfracs[mask], pr_cp, Wf_ML))
             Wf_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
+        """ U distribution related """
+        if method_abbr in ['PL']:
+            """ alpha """
+            a_ML = alphas[am_idx]
+            aopt.append(a_ML)
+            aerr.append(cal_err(alphas[mask], pr_cp, a_ML))
+            a_pdfs.append(normalize_pdf(np.sum(pr, axis=1)))
+            """ gamma """
+            g_ML = loggammas[am_idx]
+            gopt.append(g_ML)
+            gerr.append(cal_err(loggammas[mask], pr_cp, g_ML))
+            g_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
+            """ Umin """
+            u_ML = logUmins[am_idx]
+            uopt.append(u_ML)
+            uerr.append(cal_err(logUmins[mask], pr_cp, u_ML))
+            u_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1, 2))))
     print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.")
     # Saving to h5 file
     # Total_gas and dust in M_sun/pc**2
@@ -598,6 +812,9 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
     # Galaxy_center in pixel [y, x]
     with File('hdf5_MBBDust/' + name + '.h5', 'a') as hf:
         grp = hf.require_group('Fitting_results')
+        if fake:
+            grp1 = hf['Fake']
+            grp = grp1.require_group('Fitting_results')
         try:
             del grp[method_abbr]
         except KeyError:
@@ -605,25 +822,30 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
         subgrp = grp.create_group(method_abbr)
         subgrp['Dust_surface_density_log'] = sopt
         subgrp['Dust_surface_density_err_dex'] = serr  # serr in dex
-        subgrp['Dust_temperature'] = topt
-        subgrp['Dust_temperature_err'] = terr
-        subgrp['beta'] = bopt
-        subgrp['beta_err'] = berr
+        if method_abbr not in ['PL']:
+            subgrp['Dust_temperature'] = topt
+            subgrp['Dust_temperature_err'] = terr
+            subgrp['beta'] = bopt
+            subgrp['beta_err'] = berr
         subgrp['logsigmas'] = logsigmas_1d
         subgrp['PDF'] = pdfs
         subgrp['Chi2'] = achi2
         subgrp['Best_fit_sed'] = ased_fit
-        subgrp['Ts'] = Ts_1d
-        if method_abbr in ['EF', 'FB', 'BEMFB', 'PB', 'FBWD', 'BEMFBFL']:
+        if method_abbr not in ['PL']:
+            subgrp['Ts'] = Ts_1d
+        if method_abbr in ['SE', 'FB', 'BEMFB', 'PB', 'WD', 'BE']:
             subgrp['PDF_T'] = t_pdfs
-        if method_abbr in ['EF']:
+        if method_abbr in ['WD', 'PL']:
+            subgrp['PDF_Teff'] = teff_pdfs
+            subgrp['Teff_bins'] = Teff_bins
+        if method_abbr in ['SE']:
             subgrp['PDF_B'] = b_pdfs
             subgrp['betas'] = betas_1d
         elif method_abbr in ['PB']:
             subgrp['betas'] = betas_1d
         if method_abbr in ['FBPT', 'PB']:
             subgrp['coef_'] = coef_
-        if method_abbr in ['BEMFB', 'BEMFBFL']:
+        if method_abbr in ['BEMFB', 'BE']:
             subgrp['beta2s'] = beta2s_1d
             subgrp['Critical_wavelength'] = lcopt
             subgrp['Critical_wavelength_err'] = lcerr
@@ -633,9 +855,452 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=2.0,
             subgrp['beta2'] = b2opt
             subgrp['beta2_err'] = b2err
             subgrp['PDF_b2'] = b2_pdfs
-        if method_abbr in ['FBWD']:
+        if method_abbr in ['WD']:
             subgrp['WDfracs'] = WDfracs_1d
             subgrp['WDfrac'] = Wfopt
             subgrp['WDfrac_err'] = Wferr
             subgrp['PDF_Wf'] = Wf_pdfs
+        if method_abbr in ['PL']:
+            subgrp['alphas'] = alphas_1d
+            subgrp['alpha'] = aopt
+            subgrp['alpha_err'] = aerr
+            subgrp['PDF_a'] = a_pdfs
+            subgrp['loggammas'] = loggammas_1d
+            subgrp['loggamma'] = gopt
+            subgrp['loggamma_err'] = gerr
+            subgrp['PDF_g'] = g_pdfs
+            subgrp['logUmins'] = logUmins_1d
+            subgrp['logUmin'] = uopt
+            subgrp['logUmin_err'] = uerr
+            subgrp['PDF_u'] = u_pdfs
     print("Datasets saved.")
+
+
+def kappa_calibration(method_abbr, beta_f=my_beta_f, lambda_c_f=300.0,
+                      cov_mode=4, nop=6, quiet=True):
+    MWSED = np.array([0.71, 1.53, 1.08, 0.56, 0.25])
+    # Correct mode should be 100-Sum_square with Fixen values, or 5
+    # Karl's method is 4
+    mode_titles = ['100-Sum_Square', 'PS-Sum_Square',
+                   '100-Square_Sum', 'PS-Square_Sum',
+                   'all-Square_Sum', '100-Sum_Square_F']
+    print('################################################')
+    print('    Calibrating ' + method_abbr + ' (' + mode_titles[cov_mode] +
+          ') (' + ctime() + ')')
+    print('################################################')
+    logsigma_step = 0.025
+    min_logsigma = -4.
+    max_logsigma = 1.
+    T_step = 0.5
+    min_T = 5.
+    max_T = 50.
+    beta_step = 0.1
+    min_beta = -1.0
+    max_beta = 4.0
+    beta2_step = 0.25
+    min_beta2 = -1.0
+    max_beta2 = 4.0
+    WDfrac_step = 0.002
+    min_WDfrac = 0.0
+    max_WDfrac = 0.05
+    alpha_step = 0.1  # Remember to avoid alpha==1
+    min_alpha = 1.1
+    max_alpha = 3.0
+    loggamma_step = 0.2
+    min_loggamma = -4
+    max_loggamma = 0
+    logUmin_step = 0.1
+    min_logUmin = -2.
+    max_logUmin = 1.5
+    # Due to memory limit
+    if method_abbr == 'PL':
+        min_logsigma = -2.
+        max_logsigma = 0.
+        min_logUmin = -1.
+        max_logUmin = 0.
+        max_loggamma = -1.
+    #
+    # MW measurement dataset
+    #
+    """
+    # cov_modes that I am not going to use
+    if cov_mode < 2:
+        COU = 5.0 / 100.0
+        UNU = 2.5 / 100.0
+        if cov_mode == 0:  # 100-Sum_Square
+            MWcali_mat2 = np.array([[UNU, 0, 0, 0, 0],
+                                    [0, COU + UNU, COU, COU, COU],
+                                    [0, COU, COU + UNU, COU, COU],
+                                    [0, COU, COU, COU + UNU, COU],
+                                    [0, COU, COU, COU, COU + UNU]])**2
+        else:  # PS-Sum_Square
+            MWcali_mat2 = np.array([[COU + UNU, COU, 0, 0, 0],
+                                    [COU, COU + UNU, 0, 0, 0],
+                                    [0, 0, COU + UNU, COU, COU],
+                                    [0, 0, COU, COU + UNU, COU],
+                                    [0, 0, COU, COU, COU + UNU]])**2
+    elif cov_mode < 4:
+        COU = (5.0 / 100.0)**2
+        UNU = (2.5 / 100.0)**2
+        if cov_mode == 2:  # 100-Square_Sum
+            MWcali_mat2 = np.array([[UNU, 0, 0, 0, 0],
+                                    [0, COU + UNU, COU, COU, COU],
+                                    [0, COU, COU + UNU, COU, COU],
+                                    [0, COU, COU, COU + UNU, COU],
+                                    [0, COU, COU, COU, COU + UNU]])
+        else:  # PS-Square_Sum
+            MWcali_mat2 = np.array([[COU + UNU, COU, 0, 0, 0],
+                                    [COU, COU + UNU, 0, 0, 0],
+                                    [0, 0, COU + UNU, COU, COU],
+                                    [0, 0, COU, COU + UNU, COU],
+                                    [0, 0, COU, COU, COU + UNU]])
+    elif cov_mode == 4:
+        COU = (5.0 / 100.0)**2
+        UNU = (2.5 / 100.0)**2
+        MWcali_mat2 = np.array([[COU + UNU, COU, COU, COU, COU],
+                                [COU, COU + UNU, COU, COU, COU],
+                                [COU, COU, COU + UNU, COU, COU],
+                                [COU, COU, COU, COU + UNU, COU],
+                                [COU, COU, COU, COU, COU + UNU]])
+    """
+    if cov_mode == 5:
+        DCOU = 10.0 / 100.0
+        DUNU = 1.0 / 100.0
+        FCOU = 2.0 / 100.0
+        FUNU = 0.5 / 100.0
+        MWcali_mat2 = np.array([[DUNU + DCOU, 0, 0, 0, 0],
+                                [0, FCOU + FUNU, FCOU, FCOU, FCOU],
+                                [0, FCOU, FCOU + FUNU, FCOU, FCOU],
+                                [0, FCOU, FCOU, FCOU + FUNU, FCOU],
+                                [0, FCOU, FCOU, FCOU, FCOU + FUNU]])**2
+
+    MWSigmaD = (1e20 * u.u).to(u.M_sun).value * \
+        ((1 * u.pc).to(u.cm).value)**2 / 150.
+    #
+    # Build fitting grid
+    #
+    for iter_ in range(2):
+        logsigmas_1d = np.arange(min_logsigma, max_logsigma, logsigma_step)
+        betas = beta_f
+        if method_abbr == 'PL':
+            alphas_1d = np.arange(min_alpha, max_alpha, alpha_step)
+            logUmins_1d = np.arange(min_logUmin, max_logUmin, logUmin_step)
+            loggammas_1d = np.arange(min_loggamma, max_loggamma, loggamma_step)
+            logsigmas, alphas, loggammas, logUmins = \
+                np.meshgrid(logsigmas_1d, alphas_1d, loggammas_1d, logUmins_1d)
+        else:
+            Ts_1d = np.arange(min_T, max_T, T_step)
+        if method_abbr == 'SE':
+            betas_1d = np.arange(min_beta, max_beta, beta_step)
+            logsigmas, Ts, betas = np.meshgrid(logsigmas_1d, Ts_1d, betas_1d)
+        elif method_abbr == 'FB':
+            logsigmas, Ts = np.meshgrid(logsigmas_1d, Ts_1d)
+        elif method_abbr == 'BE':
+            beta2s_1d = np.arange(min_beta2, max_beta2, beta2_step)
+            logsigmas, Ts, beta2s = \
+                np.meshgrid(logsigmas_1d, Ts_1d, beta2s_1d)
+            lambda_cs = np.full(Ts.shape, lambda_c_f)
+        elif method_abbr == 'WD':
+            WDfracs_1d = np.arange(min_WDfrac, max_WDfrac, WDfrac_step)
+            logsigmas, Ts, WDfracs = np.meshgrid(logsigmas_1d, Ts_1d,
+                                                 WDfracs_1d)
+        sigmas = 10**logsigmas
+        #
+        # Build models
+        #
+        models_ = np.zeros(list(logsigmas.shape) + [5])
+        # Applying RSRFs to generate fake-observed models
+        if method_abbr in ['BEMFB', 'BE']:
+            def fitting_model(wl):
+                return BEMBB(wl, sigmas, Ts, betas, lambda_cs, beta2s,
+                             kappa160=1.)
+        elif method_abbr in ['WD']:
+            def fitting_model(wl):
+                return WD(wl, sigmas, Ts, betas, WDfracs,
+                          kappa160=1.)
+        elif method_abbr in ['PL']:
+            def fitting_model(wl):
+                return PowerLaw(wl, sigmas, alphas, 10**loggammas,
+                                logUmins, beta=betas, kappa160=1.)
+        else:
+            def fitting_model(wl):
+                return SEMBB(wl, sigmas, Ts, betas,
+                             kappa160=1.)
+
+        def split_herschel(ri, r_, rounds, _wl, wlr, output):
+            tic = clock()
+            rw = ri + r_ * nop
+            lenwls = wlr[rw + 1] - wlr[rw]
+            last_time = clock()
+            result = np.zeros(list(logsigmas.shape) + [lenwls])
+            if not quiet:
+                print("   --process", ri, "starts... (" + ctime() + ") (round",
+                      (r_ + 1), "of", str(rounds) + ")")
+            for i in range(lenwls):
+                result[..., i] = fitting_model(_wl[i + wlr[rw]])
+                current_time = clock()
+                # print progress every 10 mins
+                if (current_time > last_time + 600.) and (not quiet):
+                    last_time = current_time
+                    print("     --process", ri,
+                          str(round(100. * (i + 1) / lenwls, 1)) +
+                          "% Done. (round", (r_ + 1), "of", str(rounds) + ")")
+            output.put((ri, rw, result))
+            if not quiet:
+                print("   --process", ri, "Done. Elapsed time:",
+                      round(clock()-tic, 3), "s. (" + ctime() + ")")
+
+        models_ = np.zeros(list(logsigmas.shape) + [5])
+        timeout = 1e-6
+        # Applying RSRFs to generate fake-observed models
+        instrs = ['PACS', 'SPIRE']
+        rounds = parallel_rounds[method_abbr]
+        for instr in range(2):
+            if not quiet:
+                print(" --Constructing", instrs[instr], "RSRF model... (" +
+                      ctime() + ")")
+            ttic = clock()
+            _rsrf = pd.read_csv("data/RSRF/" + instrs[instr] + "_RSRF.csv")
+            _wl = _rsrf['Wavelength'].values
+            h_models = np.zeros(list(logsigmas.shape) + [len(_wl)])
+            wlr = [int(ri * len(_wl) / float(nop * rounds)) for ri in
+                   range(nop * rounds + 1)]
+            if instr == 0:
+                rsps = [_rsrf['PACS_100'].values,
+                        _rsrf['PACS_160'].values]
+                range_ = range(0, 2)
+            elif instr == 1:
+                rsps = [[], [], _rsrf['SPIRE_250'].values,
+                        _rsrf['SPIRE_350'].values,
+                        _rsrf['SPIRE_500'].values]
+                range_ = range(2, 5)
+            del _rsrf
+            # Parallel code
+            for r_ in range(rounds):
+                if not quiet:
+                    print("\n   --" + method_abbr, instrs[instr] + ":Round",
+                          (r_ + 1), "of", rounds, '\n')
+                q = mp.Queue()
+                processes = [mp.Process(target=split_herschel,
+                             args=(ri, r_, rounds, _wl, wlr, q))
+                             for ri in range(nop)]
+                for p in processes:
+                    p.start()
+                for p in processes:
+                    p.join(timeout)
+                for p in processes:
+                    ri, rw, result = q.get()
+                    if not quiet:
+                        print("     --Got result from process", ri)
+                    h_models[..., wlr[rw]:wlr[rw+1]] = result
+                    del ri, rw, result
+                del processes, q, p
+            # Parallel code ends
+            if not quiet:
+                print("   --Calculating response function integrals")
+            for i in range_:
+                models_[..., i] = \
+                    np.sum(h_models * rsps[i], axis=-1) / \
+                    np.sum(rsps[i] * _wl / wl[i])
+            del _wl, rsps, h_models, range_
+            if not quiet:
+                print("   --Done. Elapsed time:", round(clock()-ttic, 3),
+                      "s.\n")
+        #
+        # Start fitting
+        #
+        tic = clock()
+        models = models_
+        del models_
+        temp_matrix = np.empty_like(models)
+        diff = models - MWSED
+        sed_vec = MWSED.reshape(1, 5)
+        yerr = MWSED * np.sqrt(np.diagonal(MWcali_mat2))
+        cov_n1 = np.linalg.inv(sed_vec.T * MWcali_mat2 * sed_vec)
+        for j in range(5):
+            temp_matrix[..., j] = np.sum(diff * cov_n1[:, j], axis=-1)
+        chi2 = np.sum(temp_matrix * diff, axis=-1)
+        r_chi2 = chi2 / (5. - ndims[method_abbr])
+        """ Find the (s, t) that gives Maximum likelihood """
+        am_idx = np.unravel_index(chi2.argmin(), chi2.shape)
+        """ Probability and mask """
+        mask = r_chi2 <= np.nanmin(r_chi2) + 50.
+        pr = np.exp(-0.5 * chi2)
+        print('\nIteration', str(iter_ + 1))
+        print('Best fit r_chi^2:', r_chi2[am_idx])
+        """ kappa 160 """
+        logkappa160s = logsigmas - np.log10(MWSigmaD)
+        logkappa160, logkappa160_err = \
+            exp_and_error(logkappa160s, pr, 'logkappa_160')
+        kappa160 = 10**logkappa160
+        logsigma, _ = exp_and_error(logsigmas, pr, 'logsigmas')
+        #
+        min_logsigma = logsigma - 0.2
+        max_logsigma = logsigma + 0.2
+        # All steps
+        logsigma_step = 0.002
+        T_step = 0.1
+        beta_step = 0.02
+        beta2_step = 0.02
+        WDfrac_step = 0.0005
+        alpha_step = 0.01  # Remember to avoid alpha==1
+        loggamma_step = 0.1
+        logUmin_step = 0.01
+        print('Best fit kappa160:', kappa160)
+        wl_complete = np.linspace(1, 1000, 1000)
+        bands = ['PACS_100', 'PACS_160', 'SPIRE_250', 'SPIRE_350', 'SPIRE_500']
+        hf = File('hdf5_MBBDust/Calibration.h5', 'a')
+        try:
+            del hf[method_abbr]
+        except KeyError:
+            pass
+        grp = hf.create_group(method_abbr)
+        grp['kappa160'] = kappa160
+        grp['logkappa160'], grp['logkappa160_err'] = \
+            logkappa160, logkappa160_err
+        if method_abbr == 'SE':
+            samples = np.array([logkappa160s[mask], Ts[mask], betas[mask],
+                                r_chi2[mask]])
+            labels = [r'$\log\kappa_{160}$', r'$T$', r'$\beta$',
+                      r'$\tilde{\chi}^2$']
+            T, T_err = exp_and_error(Ts, pr, 'T')
+            beta, beta_err = exp_and_error(betas, pr, 'beta')
+            min_T = T - 1.5
+            max_T = T + 1.5
+            min_beta = beta - 0.3
+            max_beta = beta + 0.3
+            grp['T'], grp['T_err'] = T, T_err
+            grp['beta'], grp['beta_err'] = beta, beta_err
+            mode_integrated = \
+                z0mg_RSRF(wl_complete, SEMBB(wl_complete, MWSigmaD, T, beta,
+                                             kappa160=kappa160), bands)
+            model_complete = SEMBB(wl_complete, MWSigmaD, T, beta,
+                                   kappa160=kappa160)
+            gordon_integrated = \
+                z0mg_RSRF(wl_complete, SEMBB(wl_complete, MWSigmaD, 17.2, 1.96,
+                                             9.6 * np.pi), bands)
+            model_gordon = SEMBB(wl_complete, MWSigmaD, 17.2,
+                                 1.96, 9.6 * np.pi)
+        elif method_abbr == 'FB':
+            samples = np.array([logkappa160s[mask], Ts[mask], r_chi2[mask]])
+            labels = [r'$\log\kappa_{160}$', r'$T$', r'$\tilde{\chi}^2$']
+            T, T_err = exp_and_error(Ts, pr, 'T')
+            min_T = T - 1.5
+            max_T = T + 1.5
+            grp['T'], grp['T_err'] = T, T_err
+            mode_integrated = \
+                z0mg_RSRF(wl_complete, SEMBB(wl_complete, MWSigmaD, T, beta_f,
+                                             kappa160=kappa160), bands)
+            model_complete = SEMBB(wl_complete, MWSigmaD, T, beta_f,
+                                   kappa160=kappa160)
+            gordon_integrated = \
+                z0mg_RSRF(wl_complete, SEMBB(wl_complete, MWSigmaD, 17.2, 1.96,
+                                             9.6 * np.pi), bands)
+            model_gordon = SEMBB(wl_complete, MWSigmaD, 17.2,
+                                 1.96, 9.6 * np.pi)
+        elif method_abbr == 'BE':
+            samples = np.array([logkappa160s[mask], Ts[mask], beta2s[mask],
+                                r_chi2[mask]])
+            labels = [r'$\log\kappa_{160}$', r'$T$', r'$\beta_2$',
+                      r'$\tilde{\chi}^2$']
+            T, T_err = exp_and_error(Ts, pr, 'T')
+            beta2, beta2_err = exp_and_error(beta2s, pr, 'beta2')
+            min_T = T - 1.5
+            max_T = T + 1.5
+            min_beta2 = beta2 - 0.3
+            max_beta2 = beta2 + 0.3
+            grp['T'], grp['T_err'] = T, T_err
+            grp['beta2'], grp['beta2_err'] = beta2, beta2_err
+            mode_integrated = \
+                z0mg_RSRF(wl_complete, BEMBB(wl_complete, MWSigmaD, T, beta_f,
+                                             lambda_c_f, beta2,
+                                             kappa160=kappa160), bands)
+            model_complete = BEMBB(wl_complete, MWSigmaD, T, beta_f,
+                                   lambda_c_f, beta2, kappa160=kappa160)
+            e500 = 0.48
+            gbeta2 = np.log(e500 + 1) / np.log(294. / 500.) + 2.27
+            gordon_integrated = \
+                z0mg_RSRF(wl_complete, BEMBB(wl_complete, MWSigmaD, 16.8, 2.27,
+                                             294, gbeta2,
+                                             11.6 * np.pi), bands)
+            model_gordon = BEMBB(wl_complete, MWSigmaD, 16.8, 2.27, 294,
+                                 gbeta2, 11.6 * np.pi)
+        elif method_abbr == 'WD':
+            samples = np.array([logkappa160s[mask], Ts[mask], WDfracs[mask],
+                                r_chi2[mask]])
+            labels = [r'$\log\kappa_{160}$', r'$T$', r'WDfrac',
+                      r'$\tilde{\chi}^2$']
+            T, T_err = exp_and_error(Ts, pr, 'T')
+            WDfrac, WDfrac_err = exp_and_error(WDfracs, pr, 'WDfrac')
+            min_T = T - 1.5
+            max_T = T + 1.5
+            min_WDfrac = 0.0
+            max_WDfrac = WDfrac + 0.006
+            grp['T'], grp['T_err'] = T, T_err
+            grp['WDfrac'], grp['WDfrac_err'] = WDfrac, WDfrac_err
+            mode_integrated = \
+                z0mg_RSRF(wl_complete, WD(wl_complete, MWSigmaD, T, beta_f,
+                                          WDfrac, kappa160=kappa160), bands)
+            model_complete = WD(wl_complete, MWSigmaD, T, beta_f, WDfrac,
+                                kappa160=kappa160)
+            e500 = 0.91
+            nu500 = (c / 500 / u.um).to(u.Hz).value
+            gWDfrac = e500 * B_fast(15., nu500) / B_fast(6., nu500)
+            gordon_integrated = \
+                z0mg_RSRF(wl_complete, WD(wl_complete, MWSigmaD, 15., 2.9,
+                                          gWDfrac, kappa160=517. * np.pi,
+                                          WDT=6.), bands)
+            model_gordon = WD(wl_complete, MWSigmaD, 15., 2.9, gWDfrac,
+                              kappa160=517. * np.pi, WDT=6.)
+        elif method_abbr == 'PL':
+            samples = np.array([logkappa160s[mask], loggammas[mask],
+                                alphas[mask], logUmins[mask], r_chi2[mask]])
+            labels = [r'$\log\kappa_{160}$', r'$\log\gamma$', r'$\alpha$',
+                      r'\log U_{min}', r'$\tilde{\chi}^2$']
+            loggamma, loggamma_err = exp_and_error(loggammas, pr, 'loggamma')
+            alpha, alpha_err = exp_and_error(alphas, pr, 'alpha')
+            logUmin, logUmin_err = exp_and_error(logUmins, pr, 'logUmin')
+            min_alpha = max(alpha - 0.3, 1.1)
+            max_alpha = alpha + 0.3
+            min_loggamma = loggamma - 0.3
+            max_loggamma = min(loggamma + 0.3, 0.)
+            min_logUmin = logUmin - 0.1
+            max_logUmin = logUmin + 0.1
+            grp['loggamma'], grp['loggamma_err'] = loggamma, loggamma_err
+            grp['alpha'], grp['alpha_err'] = alpha, alpha_err
+            grp['logUmin'], grp['logUmin_err'] = logUmin, logUmin_err
+            mode_integrated = \
+                z0mg_RSRF(wl_complete, PowerLaw(wl_complete, MWSigmaD, alpha,
+                                                10**loggamma, logUmin,
+                                                beta=beta_f,
+                                                kappa160=kappa160), bands)
+            model_complete = PowerLaw(wl_complete, MWSigmaD, alpha,
+                                      10**loggamma, logUmin, beta=beta_f,
+                                      kappa160=kappa160)
+            gordon_integrated = \
+                z0mg_RSRF(wl_complete, SEMBB(wl_complete, MWSigmaD, 17.2, 1.96,
+                                             9.6 * np.pi), bands)
+            model_gordon = SEMBB(wl_complete, MWSigmaD, 17.2, 1.96,
+                                 9.6 * np.pi)
+        hf.close()
+    #
+    fig = corner(samples.T, labels=labels, quantities=(0.16, 0.84),
+                 show_titles=True, title_kwargs={"fontsize": 12})
+    with PdfPages('output/_CALI_' + method_abbr + '_' +
+                  mode_titles[cov_mode] + '.pdf') as pp:
+        pp.savefig(fig)
+    fig, ax = plt.subplots(figsize=(10, 7.5))
+    ax.loglog(wl_complete, model_gordon, label='G14EXP')
+    ax.loglog(wl, mode_integrated, 'x', ms=15, label='fitting (int)')
+    ax.loglog(wl_complete, model_complete, label='fitting')
+    ax.errorbar(wl, MWSED, yerr, label='MWSED')
+    ax.loglog(wl, gordon_integrated, 'x', ms=15, label='G14 (int)')
+    ax.legend()
+    ax.set_ylim(0.03, 3.0)
+    ax.set_xlim(80, 1000)
+    ax.set_xlabel(r'SED [$MJy\,sr^{-1}\,(10^{20}(H\,Atom)\,cm^{-2})^{-1}$]')
+    ax.set_ylabel(r'Wavelength ($\mu m$)')
+    with PdfPages('output/_CALI_' + method_abbr + '_' +
+                  mode_titles[cov_mode] + '_MODEL.pdf') as pp:
+        pp.savefig(fig)
+    print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.")
