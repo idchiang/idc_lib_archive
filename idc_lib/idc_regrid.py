@@ -37,6 +37,10 @@ def matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0):
     rm_bad_pts = np.full_like(map0, 1)
     rm_bad_pts[np.isnan(map0) + np.isnan(uncmap0)] = 0.0
     # Convolve map
+    """
+    some warnings in HERACLES in the line below.
+    should be due to the nan points
+    """
     map1 = convolve_fft(map0, kernel, quiet=True,
                         allow_huge=True)
     rm_bad_pts = convolve_fft(rm_bad_pts, kernel, quiet=True,

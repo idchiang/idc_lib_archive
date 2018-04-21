@@ -182,7 +182,7 @@ class MGS(object):
                     # surface density M_\odot/pc^2
                     # He included
                     # This is a calculated parameter by fitting HI to H2 mass
-                    R21 = 0.7
+                    R21 = 1 / 0.7
                     data *= R21 * temp_s['ACO']
                     uncdata *= R21 * temp_s['ACO']
                     hdr['BUNIT'] = 'Solar_mass/pc^2'
@@ -268,12 +268,13 @@ class MGS(object):
             s[survey + '_RGD'] = True if survey == 'SPIRE_500' else False
             s[survey + '_BITPIX'] = abs(int(hdr['BITPIX']))
             s[survey] = data
-
         s['RADIUS_KPC'] = self.dp_radius(s)
         s['RADIUS_KPC_RGD'] = True
         # Update DataFrame
         self.df = self.df.append(s)
         for survey in surveys:
+            self.df[survey + '_CVL'] = self.df[survey + '_CVL'].astype(bool)
+            self.df[survey + '_RGD'] = self.df[survey + '_RGD'].astype(bool)
             if survey not in ['THINGS', 'HERACLES']:
                 self.bkg_removal(name, survey)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
@@ -376,8 +377,8 @@ class MGS(object):
                     uncmap0 = self.df.loc[name][survey1 + '_UNCMAP']
                     cvl_image, cvl_unc = \
                         ric.matching_PSF(Gkernel, FWHM1, FWHM2, map0, uncmap0)
-                    self.df.set_value(name, survey1, cvl_image)
-                    self.df.set_value(name, survey1 + '_UNCMAP', cvl_unc)
+                    self.df.at[name, survey1] = cvl_image
+                    self.df.at[name, survey1 + '_UNCMAP'] = cvl_unc
 
             survey_load = 'Gauss_25' if survey1 in ['THINGS', 'HERACLES'] \
                 else survey1
@@ -386,10 +387,9 @@ class MGS(object):
             FWHM2 = self.kernels.loc[survey_load, survey2]['FWHM2']
             if not cls(ps, self.kernels.loc[survey_load, survey2]['PS'], 2.0):
                 ps_old = self.kernels.loc[survey_load, survey2]['PS']
-                self.kernels.set_value((survey_load, survey2), 'PS', ps)
+                self.kernels.at[(survey_load, survey2), 'PS'] = ps
                 kernel = ric.Kernel_regrid(kernel, ps, ps_old)
-                self.kernels.set_value((survey_load, survey2), 'KERNEL',
-                                       kernel)
+                self.kernels.at[(survey_load, survey2), 'KERNEL'] = kernel
 
             for name in names:
                 fn = 'data/PROCESSED/' + name + '/' + survey1 + '_RGD.fits'
@@ -410,9 +410,9 @@ class MGS(object):
                                              25.0, map0, uncmap0)
                     cvl_image, cvl_unc = \
                         ric.matching_PSF(kernel, FWHM1, FWHM2, map0, uncmap0)
-                    self.df.set_value(name, survey1, cvl_image)
-                    self.df.set_value(name, survey1 + '_UNCMAP', cvl_unc)
-                    self.df.set_value(name, survey1 + '_CVL', True)
+                    self.df.at[name, survey1] = cvl_image
+                    self.df.at[name, survey1 + '_UNCMAP'] = cvl_unc
+                    self.df.at[name, survey1 + '_CVL'] = True
             print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def WCS_congrid(self, names, fine_surveys, course_survey, method='linear'):
@@ -473,9 +473,10 @@ class MGS(object):
                     hdu.header.comments['NAXIS3'] = \
                         '[IDC modified] Signal / Error'
                     hdu.writeto(fn)
-                self.df.set_value(name, fine_survey, rgd_image)
-                self.df.set_value(name, fine_survey + '_UNCMAP', rgd_unc)
-                self.df.set_value(name, fine_survey + '_RGD', True)
+                self.df.at[name, fine_survey] = rgd_image
+                self.df.at[name, fine_survey + '_UNCMAP'] = rgd_unc
+                print(self.df[fine_survey + '_RGD'])
+                self.df.at[name, fine_survey + '_RGD'] = True
             print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def SFR(self, names, mode=1):
@@ -493,10 +494,10 @@ class MGS(object):
                     (0.081 * self.df.loc[name]['GALEX_FUV'] +
                      0.0032 * self.df.loc[name]['MIPS_24'])
             try:
-                self.df.set_value(name, 'SFR', SFR)
+                self.df.at[name, 'SFR'] = SFR
             except ValueError:
                 self.df['SFR'] = self.new
-                self.df.set_value(name, 'SFR', SFR)
+                self.df.at[name, 'SFR'] = SFR
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def SMSD(self, names):
@@ -510,12 +511,12 @@ class MGS(object):
         for name in names:
             # SMD in solar mass / pc^2
             smsd = self.df.loc[name]['IRAC_3.6'] * \
-                self.df.loc[name]['cosINCL'] * 280
+                self.df.loc[name]['cosINCL'] * 350
             try:
-                self.df.set_value(name, 'SMSD', smsd)
+                self.df.at[name, 'SMSD'] = smsd
             except ValueError:
                 self.df['SMSD'] = self.new
-                self.df.set_value(name, 'SMSD', smsd)
+                self.df.at[name, 'SMSD'] = smsd
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def total_gas(self, names):
@@ -536,13 +537,13 @@ class MGS(object):
             total_gas[nan_things * nan_heracles] = np.nan
             total_gas_unc[nan_things * nan_heracles] = np.nan
             try:
-                self.df.set_value(name, 'TOTAL_GAS', total_gas)
-                self.df.set_value(name, 'TOTAL_GAS_UNCMAP', total_gas_unc)
+                self.df.at[name, 'TOTAL_GAS'] = total_gas
+                self.df.at[name, 'TOTAL_GAS_UNCMAP'] = total_gas_unc
             except ValueError:
                 self.df['TOTAL_GAS'] = self.new
                 self.df['TOTAL_GAS_UNCMAP'] = self.new
-                self.df.set_value(name, 'TOTAL_GAS', total_gas)
-                self.df.set_value(name, 'TOTAL_GAS_UNCMAP', total_gas_unc)
+                self.df.at[name, 'TOTAL_GAS'] = total_gas
+                self.df.at[name, 'TOTAL_GAS_UNCMAP'] = total_gas_unc
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def BDR_cal(self, names, course_survey='SPIRE_500'):
@@ -565,10 +566,10 @@ class MGS(object):
                         break
                 lc[i-1, 1] = j + np.sum(axissum[i], dtype=int)
             try:
-                self.df.set_value(name, 'BDR', lc)
+                self.df.at[name, 'BDR'] = lc
             except ValueError:
                 self.df['BDR'] = self.new
-                self.df.set_value(name, 'BDR', lc)
+                self.df.at[name, 'BDR'] = lc
             hdr_in = self.df.loc[name][course_survey + '_HDR']
             hdr_in['CRPIX1'] -= lc[1, 0]
             hdr_in['CRPIX2'] -= lc[0, 0]
@@ -598,24 +599,24 @@ class MGS(object):
                 # assert self.df.loc[name][survey + '_RGD']
                 data = self.df.\
                     loc[name][survey][lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
-                self.df.set_value(name, survey, data)
+                self.df.at[name, survey] = data
                 if unc:
                     uncmap = self.df.\
                         loc[name][survey + '_UNCMAP'][lc[0, 0]:lc[0, 1],
                                                       lc[1, 0]:lc[1, 1]]
-                    self.df.set_value(name, survey + '_UNCMAP', uncmap)
+                    self.df.at[name, survey + '_UNCMAP'] = uncmap
                 if survey == 'THINGS':
                     with np.errstate(invalid='ignore'):
                         diskmask = data > self.THINGS_Limit
                     try:
-                        self.df.set_value(name, 'DISKMASK', diskmask)
+                        self.df.at[name, 'DISKMASK'] = diskmask
                     except ValueError:
                         self.df['DISKMASK'] = self.new
-                        self.df.set_value(name, 'DISKMASK', diskmask)
+                        self.df.at[name, 'DISKMASK'] = diskmask
                 elif survey[:9] == 'HERSCHEL_':
                     t = self.df.loc[name][survey + '_DISKMASK']
                     t = t[lc[0, 0]:lc[0, 1], lc[1, 0]:lc[1, 1]]
-                    self.df.set_value(name, survey + '_DISKMASK', t)
+                    self.df.at[name, survey + '_DISKMASK'] = t
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
     def bkg_removal(self, names, surveys, THINGS_Limit=1.0E18, bdr=0.5):
@@ -694,12 +695,12 @@ class MGS(object):
                     # GALEX: just use the mean
                     coef_ = [np.nan] * 3
                     data -= np.nanmean(data[bkg_mask])
-                self.df.set_value(name, survey, data)
+                self.df.at[name, survey] = data
                 try:
-                    self.df.set_value(name, survey + '_BKG_COEF', coef_)
+                    self.df.at[name, survey + '_BKG_COEF'] = coef_
                 except ValueError:
                     self.df[survey + '_BKG_COEF'] = self.new
-                    self.df.set_value(name, survey + '_BKG_COEF', coef_)
+                    self.df.at[name, survey + '_BKG_COEF'] = coef_
             print(' --' + name, 'in', survey + ':', bkg_mask.sum(),
                   'effective background pixels.')
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
@@ -742,22 +743,19 @@ class MGS(object):
                                                   dtype=bool))
                     bkgcov = np.cov(data[bkgmask].T)
                     try:
-                        self.df.set_value(name, survey, data)
-                        self.df.set_value(name, survey + '_UNCMAP',
-                                          uncmap)
-                        self.df.set_value(name, survey + '_BKGCOV',
-                                          bkgcov)
-                        self.df.set_value(name, survey + '_DISKMASK',
-                                          ~bkgmask)
+                        self.df.at[name, survey] = data
+                        self.df.at[name, survey + '_UNCMAP'] = uncmap
+                        self.df.at[name, survey + '_BKGCOV'] = bkgcov
+                        self.df.at[name, survey + '_DISKMASK'] = ~bkgmask
                     except ValueError:
                         self.df[survey] = self.new
                         self.df[survey + '_UNCMAP'] = self.new
                         self.df[survey + '_BKGCOV'] = self.new
                         self.df[survey + '_DISKMASK'] = self.new
-                        self.df.set_value(name, survey, data)
-                        self.df.set_value(name, survey + '_UNCMAP', uncmap)
-                        self.df.set_value(name, survey + '_BKGCOV', bkgcov)
-                        self.df.set_value(name, survey + '_DISKMASK', ~bkgmask)
+                        self.df.at[name, survey] = data
+                        self.df.at[name, survey + '_UNCMAP'] = uncmap
+                        self.df.at[name, survey + '_BKGCOV'] = bkgcov
+                        self.df.at[name, survey + '_DISKMASK'] = ~bkgmask
                 print(' --' + name, 'in', survey + ':', np.sum(bkgmask),
                       'effective background pixels.')
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
@@ -783,11 +781,24 @@ class MGS(object):
             with File('hdf5_MBBDust/' + name + '.h5', 'a') as hf:
                 grp = hf.require_group('Regrid')
                 for survey in surveys:
+                    try:
+                        del grp[survey]
+                    except KeyError:
+                        pass
                     grp[survey] = self.df.loc[name][survey]
                     if survey not in no_unc:
+                        try:
+                            del grp[survey + '_UNCMAP']
+                        except KeyError:
+                            pass
                         grp[survey + '_UNCMAP'] = \
                             self.df.loc[name][survey + '_UNCMAP']
                     if survey[:9] == 'HERSCHEL_':
+                        try:
+                            del grp[survey + '_BKGCOV']
+                            del grp[survey + '_DISKMASK']
+                        except KeyError:
+                            pass
                         grp[survey + '_BKGCOV'] = \
                             self.df.loc[name][survey + '_BKGCOV']
                         grp[survey + '_DISKMASK'] = \

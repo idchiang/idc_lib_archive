@@ -1,13 +1,14 @@
 import numpy as np
 import astropy.units as u
 from astropy.constants import c, h, k_B
+from astropy.modeling.blackbody import blackbody_lambda
 wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
 nu = (c / wl / u.um).to(u.Hz)
 nun = nu.value
 hkB_KHz = (h / k_B).to(u.K / u.Hz).value
 B_const = 2e20 * (h / c**2).to(u.J * u.s**3 / u.m**2).value
 c_ums = c.to(u.um / u.s).value
-MBB_const = 2.0891E-4
+MBB_const = 0.00020884262122368297
 MWT = 18.0
 WDT = 40.0
 logUmax = 7.0
@@ -19,6 +20,11 @@ which cancels all the unit calculation in B() but becomes unit limited
 
 the same for freq(Hz) and wl(um) in the related functions
 """
+
+
+def SEMBB_lambda(wl, sigma, T, beta, kappa160=9.6 * np.pi):
+    return MBB_const * kappa160 * (160.0 / wl)**beta * sigma * \
+        blackbody_lambda(wl * u.um, T * u.K).value
 
 
 def map2bin(data, binlist, binmap):
@@ -36,6 +42,11 @@ def list2bin(listData, binlist, binmap):
     for i in range(len(binlist)):
         data[binmap == binlist[i]] = listData[i]
     return data
+
+
+def bin2list(data, binlist, binmap):
+    assert data.shape == binmap.shape
+    return np.array([data[binmap == b][0] for b in binlist])
 
 
 # Probability functions & model functions for fitting (internal)
