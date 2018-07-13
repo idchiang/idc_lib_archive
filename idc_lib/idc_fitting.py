@@ -15,7 +15,7 @@ from .idc_functions import map2bin, SEMBB, BEMBB, WD, PowerLaw, B_fast
 from .idc_functions import WDT, MWT, Umax
 from .z0mg_RSRF import z0mg_RSRF
 plt.ioff()
-my_beta_f = 1.8
+my_beta_f = 2.0
 
 # Grid parameters
 logsigma_step = 0.025
@@ -132,12 +132,13 @@ def cal_and_print_err(var, idx, mask, pr_cp, varname):
     print('    ' + ' ' * len(varname) + 'error:', err)
 
 
-def exp_and_error(var, pr, varname):
+def exp_and_error(var, pr, varname=None, quiet=True):
     Z = np.sum(pr)
     expected = np.sum(var * pr) / Z
     err = cal_err(var.flatten(), pr.flatten(), expected)
-    print('Expected', varname + ':', expected)
-    print('    ' + ' ' * len(varname) + 'error:', err)
+    if not quiet:
+        print('Expected', varname + ':', expected)
+        print('    ' + ' ' * len(varname) + 'error:', err)
     return expected, err
 
 
@@ -721,6 +722,7 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
         am_idx = np.unravel_index(chi2.argmin(), chi2.shape)
         achi2.append(np.nanmin(chi2))
         ased_fit.append(models[am_idx])
+        del am_idx
         """
         method_abbrs = {'SE': 3, 'FB': 2, 'FBPT': 1, 'PB': 2, 'BEMFB': 4}
         Special care in \Sigma_D: FBPT(1d)
@@ -728,13 +730,11 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
         Special care in \beta: PB(b_ML), EF(err)
         """
         """ Probability and mask """
-        mask = chi2 < achi2[-1] + 6.0
         pr = np.exp(-0.5 * chi2)
-        pr_cp = pr[mask]
         """ \Sigma_D """
-        s_ML = logsigmas[am_idx]
-        sopt.append(s_ML)
-        serr.append(cal_err(logsigmas[mask], pr_cp, s_ML))
+        sexp, s_err = exp_and_error(logsigmas, pr)
+        sopt.append(sexp)
+        serr.append(s_err)
         if method_abbr in ['FBPT', 'PB']:
             pdfs.append(normalize_pdf(pr))
         else:
@@ -746,9 +746,9 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
         elif method_abbr in ['PL']:
             pass
         else:
-            t_ML = Ts[am_idx]
-            topt.append(t_ML)
-            terr.append(cal_err(Ts[mask], pr_cp, t_ML))
+            texp, t_err = exp_and_error(Ts, pr)
+            topt.append(texp)
+            terr.append(t_err)
             if method_abbr in ['PB']:
                 t_pdfs.append(normalize_pdf(np.sum(pr, axis=0)))
             else:
@@ -760,14 +760,14 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
         """ \beta """
         if method_abbr not in ['PL']:
             if method_abbr in ['SE']:
-                b_ML = betas[am_idx]
+                bexp, b_err = exp_and_error(betas, pr)
             elif method_abbr in ['PB']:
-                b_ML = beta_pred[i]
+                bexp = beta_pred[i]
             else:
-                b_ML = betas
-            bopt.append(b_ML)
+                bexp = betas
+            bopt.append(bexp)
             if method_abbr in ['SE']:
-                berr.append(cal_err(betas[mask], pr_cp, b_ML))
+                berr.append(b_err)
                 b_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
             else:
                 berr.append(0.0)
@@ -775,41 +775,41 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
         if method_abbr in ['BEMFB', 'BE']:
             """ \lambda_c """
             if method_abbr == 'BEMFB':
-                lc_ML = lambda_cs[am_idx]
-                lcopt.append(lc_ML)
-                lcerr.append(cal_err(lambda_cs[mask], pr_cp, lc_ML))
+                lcexp, lc_err = exp_and_error(lambda_cs, pr)
+                lcopt.append(lcexp)
+                lcerr.append(lc_err)
                 lc_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
             elif method_abbr == 'BE':
                 lcopt.append(lambda_c_f)
                 lcerr.append(0)
             """ \beta2 """
-            b2_ML = beta2s[am_idx]
-            b2opt.append(b2_ML)
-            b2err.append(cal_err(beta2s[mask], pr_cp, b2_ML))
+            b2exp, b2_err = exp_and_error(beta2s, pr)
+            b2opt.append(b2exp)
+            b2err.append(b2_err)
             b2_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1, 2))))
         """ Warm Dust related """
         if method_abbr in ['WD']:
             """ WDfrac """
-            Wf_ML = WDfracs[am_idx]
-            Wfopt.append(Wf_ML)
-            Wferr.append(cal_err(WDfracs[mask], pr_cp, Wf_ML))
+            Wfexp, Wf_err = exp_and_error(WDfracs, pr)
+            Wfopt.append(Wfexp)
+            Wferr.append(Wf_err)
             Wf_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
         """ U distribution related """
         if method_abbr in ['PL']:
             """ alpha """
-            a_ML = alphas[am_idx]
-            aopt.append(a_ML)
-            aerr.append(cal_err(alphas[mask], pr_cp, a_ML))
+            aexp, a_err = exp_and_error(alphas, pr)
+            aopt.append(aexp)
+            aerr.append(a_err)
             a_pdfs.append(normalize_pdf(np.sum(pr, axis=1)))
             """ gamma """
-            g_ML = loggammas[am_idx]
-            gopt.append(g_ML)
-            gerr.append(cal_err(loggammas[mask], pr_cp, g_ML))
+            gexp, g_err = exp_and_error(loggammas, pr)
+            gopt.append(gexp)
+            gerr.append(g_err)
             g_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1))))
             """ Umin """
-            u_ML = logUmins[am_idx]
-            uopt.append(u_ML)
-            uerr.append(cal_err(logUmins[mask], pr_cp, u_ML))
+            uexp, u_err = exp_and_error(logUmins, pr)
+            uopt.append(uexp)
+            uerr.append(u_err)
             u_pdfs.append(normalize_pdf(np.sum(pr, axis=(0, 1, 2))))
     print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.")
     # Saving to h5 file
@@ -887,7 +887,7 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
 
 def kappa_calibration(method_abbr, beta_f=my_beta_f, lambda_c_f=300.0,
                       cov_mode=4, nop=6, quiet=True):
-    MWSED = np.array([0.71, 1.53, 1.08, 0.56, 0.25])
+    MWSED = np.array([0.71, 1.53, 1.08, 0.56, 0.25]) * 0.97
     # Correct mode should be 100-Sum_square with Fixen values, or 5
     # Karl's method is 4
     mode_titles = ['100-Sum_Square', 'PS-Sum_Square',
@@ -1336,6 +1336,15 @@ def SE_calibration_vs_G14(nop=6):
                        [0, FCOU, FCOU + FUNU, FCOU, FCOU],
                        [0, FCOU, FCOU, FCOU + FUNU, FCOU],
                        [0, FCOU, FCOU, FCOU, FCOU + FUNU]])**2
+    DCOU = (10.0 / 100.0)**2
+    DUNU = (1.0 / 100.0)**2
+    FCOU = (2.0 / 100.0)**2
+    FUNU = (0.5 / 100.0)**2
+    myMat2 = np.array([[DUNU + DCOU, 0, 0, 0, 0],
+                       [0, FCOU + FUNU, FCOU, FCOU, FCOU],
+                       [0, FCOU, FCOU + FUNU, FCOU, FCOU],
+                       [0, FCOU, FCOU, FCOU + FUNU, FCOU],
+                       [0, FCOU, FCOU, FCOU, FCOU + FUNU]])
     #
     # G14 COV
     #
@@ -1349,8 +1358,6 @@ def SE_calibration_vs_G14(nop=6):
     #
     MWSigmaD = (1e20 * 1.0079 * u.g / N_A.value).to(u.M_sun).value * \
         ((1 * u.pc).to(u.cm).value)**2 / 150.
-    print(MWSigmaD)
-    return
     #
     # Build fitting grid: my grid
     #
@@ -1687,6 +1694,9 @@ def SE_calibration_vs_G14(nop=6):
             exp_and_error(logkappa160s, pr, 'logkappa_160')
         kappa160 = 10**logkappa160
         logsigma, _ = exp_and_error(logsigmas, pr, 'logsigmas')
+        kappa160s = 10**logkappa160s
+        kappa160L, kappa160L_err = \
+            exp_and_error(kappa160s, pr, 'logkappa_160')
         #
         # All steps
         print('Best fit kappa160:', kappa160)
@@ -1723,6 +1733,7 @@ def SE_calibration_vs_G14(nop=6):
         s['kappa_EXPQ'] = kappa160Q
         s['T_EXPQ'] = TQ
         s['beta_EXPQ'] = betaQ
+        s['kappa_EXPL'] = kappa160L
         #
         pr2 = np.sum(pr, axis=(0, 2))
         logsigma_1dtest, _ = exp_and_error(logsigmas_1d, pr2, 'logsigma')

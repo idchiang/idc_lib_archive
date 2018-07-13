@@ -9,7 +9,7 @@ os.system('clear')  # on linux / os x
 all_ = ['SE', 'FB', 'BE', 'WD', 'PL']
 name = 'NGC5457'
 
-cali = 0
+cali = 0 
 f = 1
 
 method_cali = all_
@@ -26,6 +26,6 @@ if cali:
 
 if f:
     for method_abbr in method_f:
-        fdd(name, cov_mode=True, method_abbr=method_abbr, del_model=True,
-            nop=nop)
+        fdd(name, cov_mode=True, method_abbr=method_abbr, del_model=False,
+            nop=nop) 
 print('')
