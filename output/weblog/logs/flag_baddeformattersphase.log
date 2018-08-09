@@ -1,0 +1,198 @@
+2018-07-20 00:11:41	INFO	flagdata::::	Starting EVLA_pipe_flag_baddeformattersphase.py
+2018-07-20 00:11:41	INFO	flagdata::::	Will test on quantity: phase
+2018-07-20 00:11:41	INFO	flagdata::::	Will test using statistic: diff
+2018-07-20 00:11:41	INFO	flagdata::::	Will flag values over limit = 50
+2018-07-20 00:11:41	INFO	flagdata::::	Will identify basebands with more than 4 bad spw
+2018-07-20 00:11:41	INFO	flagdata::::	Will identify individual spw when less than 4 bad spw
+2018-07-20 00:11:41	INFO	flagdata::::	Will use flag REASON = bad_deformatters_phase or RFI
+2018-07-20 00:11:41	INFO	flagdata::::	Will flag data based on what we found
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 0 (ea01) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 0 (ea01) EVLA_L A0C0 spw=4 phase diff=355.4006
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 0 (ea01) EVLA_L A0C0 spw=7 phase diff=182.6232
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 0 (ea01) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 0 (ea01) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 1 (ea02) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 1 (ea02) EVLA_L A0C0 spw=7 phase diff=183.8506
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 1 (ea02) EVLA_L A0C0 bad spws=[7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 1 (ea02) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 1 (ea02) EVLA_L B0D0 spw=9 phase diff=165.6121
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 1 (ea02) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 2 (ea03) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 2 (ea03) EVLA_L A0C0 spw=4 phase diff=359.5961
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 2 (ea03) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 2 (ea03) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 2 (ea03) EVLA_L B0D0 spw=9 phase diff=195.3575
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 2 (ea03) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 3 (ea04) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 3 (ea04) EVLA_L A0C0 spw=4 phase diff=348.0545
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 3 (ea04) EVLA_L A0C0 spw=7 phase diff=182.5790
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 3 (ea04) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 3 (ea04) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 3 (ea04) EVLA_L B0D0 spw=9 phase diff=162.0268
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 3 (ea04) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 4 (ea05) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 4 (ea05) EVLA_L A0C0 spw=4 phase diff=356.4120
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 4 (ea05) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 4 (ea05) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 5 (ea06) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 5 (ea06) EVLA_L A0C0 spw=4 phase diff=358.2389
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 5 (ea06) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 5 (ea06) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 5 (ea06) EVLA_L B0D0 spw=9 phase diff=73.7244
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 5 (ea06) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 6 (ea07) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 6 (ea07) EVLA_L A0C0 spw=4 phase diff=357.7960
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 6 (ea07) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 6 (ea07) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 7 (ea08) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 7 (ea08) EVLA_L A0C0 spw=4 phase diff=355.3968
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 7 (ea08) EVLA_L A0C0 spw=7 phase diff=181.1519
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 7 (ea08) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 7 (ea08) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 8 (ea09) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 8 (ea09) EVLA_L A0C0 spw=4 phase diff=356.2401
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 8 (ea09) EVLA_L A0C0 spw=7 phase diff=190.7079
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 8 (ea09) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 8 (ea09) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 9 (ea10) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 9 (ea10) EVLA_L A0C0 spw=4 phase diff=356.9353
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 9 (ea10) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 9 (ea10) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 9 (ea10) EVLA_L B0D0 spw=9 phase diff=182.8650
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 9 (ea10) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 10 (ea11) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 10 (ea11) EVLA_L A0C0 spw=4 phase diff=327.4610
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 10 (ea11) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 10 (ea11) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 11 (ea12) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 11 (ea12) EVLA_L A0C0 spw=4 phase diff=176.0392
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 11 (ea12) EVLA_L A0C0 spw=7 phase diff=182.2593
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 11 (ea12) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 11 (ea12) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 12 (ea13) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 12 (ea13) EVLA_L A0C0 spw=4 phase diff=317.0290
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 12 (ea13) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 12 (ea13) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 12 (ea13) EVLA_L B0D0 spw=9 phase diff=212.4189
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 12 (ea13) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 13 (ea14) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 13 (ea14) EVLA_L A0C0 spw=4 phase diff=355.5686
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 13 (ea14) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 13 (ea14) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 14 (ea15) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 14 (ea15) EVLA_L A0C0 spw=4 phase diff=357.7133
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 14 (ea15) EVLA_L A0C0 spw=7 phase diff=182.7645
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 14 (ea15) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 14 (ea15) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 14 (ea15) EVLA_L B0D0 spw=9 phase diff=182.5230
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 14 (ea15) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 15 (ea16) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 15 (ea16) EVLA_L A0C0 spw=4 phase diff=355.4351
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 15 (ea16) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 15 (ea16) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 15 (ea16) EVLA_L B0D0 spw=9 phase diff=356.7257
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 15 (ea16) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 16 (ea17) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 16 (ea17) EVLA_L A0C0 spw=4 phase diff=353.3072
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 16 (ea17) EVLA_L A0C0 spw=7 phase diff=185.6088
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 16 (ea17) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 16 (ea17) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 16 (ea17) EVLA_L B0D0 spw=9 phase diff=163.5376
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 16 (ea17) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 17 (ea18) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=0 phase diff=207.0651
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=1 phase diff=186.8984
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=2 phase diff=203.5155
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=3 phase diff=194.4101
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=4 phase diff=355.6272
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=5 phase diff=199.5285
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=6 phase diff=189.8680
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L A0C0 spw=7 phase diff=182.5408
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 17 (ea18) EVLA_L A0C0 bad baseband spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 17 (ea18) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 17 (ea18) EVLA_L B0D0 spw=9 phase diff=200.5972
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 17 (ea18) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 18 (ea19) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 18 (ea19) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 18 (ea19) EVLA_L B0D0 spw=9 phase diff=173.2411
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 18 (ea19) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 19 (ea20) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 19 (ea20) EVLA_L A0C0 spw=4 phase diff=282.3731
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 19 (ea20) EVLA_L A0C0 spw=7 phase diff=178.4621
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 19 (ea20) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 19 (ea20) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 19 (ea20) EVLA_L B0D0 spw=9 phase diff=359.6009
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 19 (ea20) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 20 (ea21) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 20 (ea21) EVLA_L A0C0 spw=4 phase diff=125.3413
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 20 (ea21) EVLA_L A0C0 spw=7 phase diff=178.7043
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 20 (ea21) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 20 (ea21) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 20 (ea21) EVLA_L B0D0 spw=9 phase diff=187.0241
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 20 (ea21) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 21 (ea22) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 21 (ea22) EVLA_L A0C0 spw=4 phase diff=358.1301
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 21 (ea22) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 21 (ea22) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 21 (ea22) EVLA_L B0D0 spw=9 phase diff=122.0011
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 21 (ea22) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 22 (ea23) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 22 (ea23) EVLA_L A0C0 spw=4 phase diff=101.0979
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 22 (ea23) EVLA_L A0C0 spw=7 phase diff=183.2122
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 22 (ea23) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 22 (ea23) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 23 (ea24) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 23 (ea24) EVLA_L A0C0 spw=4 phase diff=344.1125
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 23 (ea24) EVLA_L A0C0 spw=7 phase diff=182.6635
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 23 (ea24) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 23 (ea24) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 23 (ea24) EVLA_L B0D0 spw=9 phase diff=354.6814
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 23 (ea24) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 24 (ea25) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 24 (ea25) EVLA_L A0C0 spw=4 phase diff=349.1954
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 24 (ea25) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 24 (ea25) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 24 (ea25) EVLA_L B0D0 spw=9 phase diff=212.0217
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 24 (ea25) EVLA_L B0D0 bad spws=[9]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 25 (ea27) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 25 (ea27) EVLA_L A0C0 spw=4 phase diff=273.3548
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 25 (ea27) EVLA_L A0C0 bad spws=[4]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 25 (ea27) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 25 (ea27) EVLA_L B0D0 spw=12 phase diff=350.4500
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 25 (ea27) EVLA_L B0D0 bad spws=[12]
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 25 (ea27) EVLA_L B0D0 no unflagged solutions spws=[9] 
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 26 (ea28) EVLA_L A0C0 processing spws=[0, 1, 2, 3, 4, 5, 6, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 26 (ea28) EVLA_L A0C0 spw=4 phase diff=296.2935
+2018-07-20 00:12:01	INFO	flagdata::::	  Found Ant 26 (ea28) EVLA_L A0C0 spw=7 phase diff=84.8939
+2018-07-20 00:12:01	INFO	flagdata::::	Ant 26 (ea28) EVLA_L A0C0 bad spws=[4, 7]
+2018-07-20 00:12:01	INFO	flagdata::::	 Ant 26 (ea28) EVLA_L B0D0 processing spws=[8, 9, 10, 11, 12]
+2018-07-20 00:12:01	INFO	flagdata::::	Possible bad basebands/spws found:
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea01' spw='4,7'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea02' spw='7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea03' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea04' spw='4,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea05' spw='4'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea06' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea07' spw='4'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea08' spw='4,7'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea09' spw='4,7'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea10' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea11' spw='4'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea12' spw='4,7'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea13' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea14' spw='4'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea15' spw='4,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea16' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea17' spw='4,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea18' spw='0,1,2,3,4,5,6,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea19' spw='9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea20' spw='4,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea21' spw='4,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea22' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea23' spw='4,7'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea24' spw='4,7,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea25' spw='4,9'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea27' spw='4,12'
+2018-07-20 00:12:01	INFO	flagdata::::	   mode='manual' antenna='ea28' spw='4,7'
+2018-07-20 00:12:01	INFO	flagdata::::	Flagging these in the ms:
+2018-07-20 00:13:37	INFO	flagdata::::	Finished EVLA_pipe_flag_baddeformattersphase.py

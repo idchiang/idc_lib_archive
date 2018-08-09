@@ -1,0 +1,4 @@
+2018-07-20 00:13:37	INFO	flagdata::::	Starting EVLA_pipe_checkflag.py
+2018-07-20 00:13:37	INFO	flagdata::::	Checking RFI flagging of BP and Delay Calibrators
+2018-07-20 00:17:56	INFO	flagdata::::	QA2 score: Pass
+2018-07-20 00:17:56	INFO	flagdata::::	Finished EVLA_pipe_checkflag.py

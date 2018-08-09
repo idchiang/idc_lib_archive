@@ -1,0 +1,5 @@
+2018-07-20 02:53:20	INFO	plotcal::::	Starting EVLA_pipe_applycals.py
+2018-07-20 03:09:01	INFO	flagdata::::	Finished flags summary before final applycal
+2018-07-20 04:30:37	INFO	flagdata::::	Finished flags summary after final applycal
+2018-07-20 04:30:37	INFO	flagdata::::	QA2 score: Pass
+2018-07-20 04:30:37	INFO	flagdata::::	Finished EVLA_pipe_applycals.py

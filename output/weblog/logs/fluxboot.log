@@ -1,0 +1,29 @@
+2018-07-20 02:12:42	INFO	gaincal::::	Starting EVLA_pipe_fluxboot.py
+2018-07-20 02:12:42	INFO	gaincal::::	Doing flux density bootstrapping
+2018-07-20 02:12:42	INFO	gaincal::::	Flux densities will be written to 14A-468.sb29639312.eb29693960.56920.90377532407.fluxdensities
+2018-07-20 02:12:45	INFO	fluxscale::::	Fitting data with power law
+2018-07-20 02:12:45	INFO	fluxscale::::	J1439-1659 L fitted spectral index & SNR = -0.897470336051 50676.6946345
+2018-07-20 02:12:45	INFO	fluxscale::::	Frequency, data, error, and fitted data:
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.652160138  1.68247754875  0.00573364209402  1.67226321936
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.650218006  1.6819601178  0.00479582381482  1.67402940346
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.704845434  1.60800039204  0.00291606862811  1.62580906357
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.18  2.23224120165  0.00368103990298  2.26197601505
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.436  1.91165780895  0.00256429191409  1.89652475924
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.308  2.07465998785  0.00247379773525  2.0622816317
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.692  1.61270801136  0.00322206131989  1.6368821701
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.82  1.54107431642  0.00247008317934  1.53318163627
+2018-07-20 02:12:45	INFO	fluxscale::::	    1.407457156  1.93243715219  0.00360879080961  1.93100674513
+2018-07-20 02:12:45	INFO	fluxscale::::	Setting power-law fit in the model column
+2018-07-20 02:12:45	INFO	fluxscale::::	Running setjy on spw 11
+2018-07-20 02:12:53	INFO	setjy::::	Running setjy on spw 10
+2018-07-20 02:13:01	INFO	setjy::::	Running setjy on spw 12
+2018-07-20 02:13:08	INFO	setjy::::	Running setjy on spw 1
+2018-07-20 02:13:17	INFO	setjy::::	Running setjy on spw 3
+2018-07-20 02:13:24	INFO	setjy::::	Running setjy on spw 2
+2018-07-20 02:13:32	INFO	setjy::::	Running setjy on spw 5
+2018-07-20 02:13:40	INFO	setjy::::	Running setjy on spw 6
+2018-07-20 02:13:48	INFO	setjy::::	Running setjy on spw 8
+2018-07-20 02:13:57	INFO	setjy::::	Flux density bootstrapping finished
+2018-07-20 02:13:57	INFO	setjy::::	Plotting model calibrator flux densities
+2018-07-20 02:17:49	INFO	plotms::::	QA2 score: Pass
+2018-07-20 02:17:49	INFO	plotms::::	Finished EVLA_pipe_fluxboot.py

@@ -1,0 +1,21 @@
+2018-07-19 17:55:26	INFO	importevla::::	Starting EVLA_pipe_import.py
+2018-07-19 17:55:26	INFO	importevla::::	Creating measurementset
+2018-07-19 18:06:14	INFO	importevla::::	Measurement set 14A-468.sb29639312.eb29693960.56920.90377532407.ms created
+2018-07-19 18:06:14	INFO	importevla::::	Finished EVLA_pipe_import.py
+2018-07-19 18:06:14	INFO	importevla::::	QA2 score: Pass
+2018-07-19 19:11:05	INFO	importevla::::	Starting EVLA_pipe_import.py
+2018-07-19 19:11:05	INFO	importevla::::	Measurement set already exists, will use 14A-468.sb29639312.eb29693960.56920.90377532407.ms
+2018-07-19 19:11:05	INFO	importevla::::	Finished EVLA_pipe_import.py
+2018-07-19 19:11:05	INFO	importevla::::	QA2 score: Pass
+2018-07-19 19:11:55	INFO	importevla::::	Starting EVLA_pipe_import.py
+2018-07-19 19:11:55	INFO	importevla::::	Measurement set already exists, will use 14A-468.sb29639312.eb29693960.56920.90377532407.ms
+2018-07-19 19:11:55	INFO	importevla::::	Finished EVLA_pipe_import.py
+2018-07-19 19:11:55	INFO	importevla::::	QA2 score: Pass
+2018-07-19 20:46:30	INFO	default::::	Starting EVLA_pipe_import.py
+2018-07-19 20:46:30	INFO	default::::	Measurement set already exists, will use 14A-468.sb29639312.eb29693960.56920.90377532407.ms
+2018-07-19 20:46:30	INFO	default::::	Finished EVLA_pipe_import.py
+2018-07-19 20:46:30	INFO	default::::	QA2 score: Pass
+2018-07-19 21:21:38	INFO	plotms::::	Starting EVLA_pipe_import.py
+2018-07-19 21:21:38	INFO	plotms::::	Measurement set already exists, will use 14A-468.sb29639312.eb29693960.56920.90377532407.ms
+2018-07-19 21:21:38	INFO	plotms::::	Finished EVLA_pipe_import.py
+2018-07-19 21:21:38	INFO	plotms::::	QA2 score: Pass

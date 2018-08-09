@@ -1,0 +1,4 @@
+2018-07-20 00:56:38	INFO	plotms::::	Starting EVLA_pipe_checkflag_semiFinal.py
+2018-07-20 00:56:38	INFO	plotms::::	Checking RFI flagging of all calibrators
+2018-07-20 01:18:52	INFO	flagdata::::	QA2 score: Pass
+2018-07-20 01:18:52	INFO	flagdata::::	Finished EVLA_pipe_checkflag_semiFinal.py

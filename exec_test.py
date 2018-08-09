@@ -1,49 +1,88 @@
-import os
-from astropy.io import fits
-from astropy.convolution import convolve_fft, convolve
 import matplotlib.pyplot as plt
-from time import clock
 import numpy as np
+import time
 
-os.system('clear')  # on linux / os x
+np.random.seed(int(time.time()))
 
-survey = 'PACS160'
-name = 'NGC5457'
-name1 = 'NGC'
-name2 = '5457'
+plt.ion()
+plt.close('all')
 
-filename = 'data/PACS/' + name1 + '_' + name2 + '_I_160um_k2011.fits.gz'
-data, hdr = fits.getdata(filename, 0, header=True)
-PACS160 = data[0]
+grid = plt.GridSpec(2, 4, wspace=1.0, hspace=0.4)
+fig = plt.figure(figsize=(9, 4))
+x, y = 0.07, 0.77
 
-filename = 'data/Kernels/Kernel_LoRes_PACS_160_to_SPIRE_500.fits.gz'
-kernel, khdr = fits.getdata(filename, 0, header=True)
+# The PDFs of the individual pixels.
+ax = plt.subplot(grid[0, 1:3])
+ax.plot([0, 0.05, 0.05, 0.15, 0.15, 0.25, 0.25, 0.35,
+         0.35, 1.00],
+        [0, 0.00, 0.10, 0.10, 0.80, 0.80, 0.10, 0.10,
+         0.00, 0.00],
+        label='Pixel A')
+ax.plot([0, 0.65, 0.65, 0.75, 0.75, 0.85, 0.85, 0.95,
+         0.95, 1.00],
+        [0, 0.00, 0.10, 0.10, 0.80, 0.80, 0.10, 0.10,
+         0.00, 0.00],
+        label='Pixel B')
+ax.set_xlim([0.0, 1.0])
+ax.set_ylim([0.0, 1.0])
+ax.set_xlabel('DGR')
+ax.set_ylabel('P(DGR)')
+ax.set_yticks([])
+ax.legend()
+ax.set_title('(a)', x=x, y=y)
 
-tic = clock()
-r_fft = convolve_fft(PACS160, kernel)
-r_fft[np.isnan(PACS160)] = np.nan
-toc = clock()
-fft_time = toc - tic
-print('FFT done')
-tic = clock()
-r = convolve(PACS160, kernel)
-r[np.isnan(PACS160)] = np.nan
-toc = clock()
-print('convolve done')
-print('FFT time:', fft_time)
-print('COV time:', toc - tic)
-print('FFT sum:', np.nansum(r_fft))
-print('COV sum:', np.nansum(r))
+ax = plt.subplot(grid[1, 0:2])
+n = 100000
+SigmaD_randA = np.random.random(n)
+SigmaD_A = np.empty_like(SigmaD_randA)
+SigmaD_A[SigmaD_randA < 0.1] = 0.1
+SigmaD_A[(0.1 <= SigmaD_randA) * (SigmaD_randA < 0.9)] = 0.2
+SigmaD_A[0.9 <= SigmaD_randA] = 0.3
+SigmaD_randB = np.random.random(n)
+SigmaD_B = np.empty_like(SigmaD_randB)
+SigmaD_B[SigmaD_randB < 0.1] = 0.7
+SigmaD_B[(0.1 <= SigmaD_randB) * (SigmaD_randB < 0.9)] = 0.8
+SigmaD_B[0.9 <= SigmaD_randB] = 0.9
+DGRs = (SigmaD_A + SigmaD_B) / 2
+n, bins, patches = ax.hist(DGRs, bins=np.arange(21) / 20 - 0.025, density=True,
+                           label='Realize')
+ylim = [0.0, np.nanmax(n)/0.8]
+bins2 = \
+    [0.425, 0.475, 0.525, 0.575]
+csp = \
+    [0.010, 0.170, 0.830, 0.990]
+DGR16, DGR84 = np.interp([0.16, 0.84], csp, bins2)
+ax.plot([DGR16] * 2, ylim, label='16%')
+ax.plot([DGR84] * 2, ylim, label='84%')
+ax.set_xlim([0.0, 1.0])
+ax.set_ylim(ylim)
+ax.set_xlabel('DGR')
+ax.set_ylabel('P(DGR)')
+ax.set_yticks([])
+ax.legend()
+ax.set_title('(b)', x=x, y=y)
 
-fig, ax = plt.subplots(nrows=2, ncols=2)
-ax[0, 0].imshow(PACS160, origin='lower')
-ax[0, 0].set_title('Original')
-ax[0, 1].imshow(r_fft, origin='lower')
-ax[0, 1].set_title('convolve_fft')
-ax[1, 0].imshow(r, origin='lower')
-ax[1, 0].set_title('convolve')
-im = ax[1, 1].imshow((r - r_fft) / r_fft, origin='lower')
-ax[1, 1].set_title('Relative residual')
-plt.colorbar(im, ax=ax[1, 1])
-fig.tight_layout()
-fig.savefig('output/Ref017.png')
+ax = plt.subplot(grid[1, 2:4])
+ax.plot([0, 0.05, 0.05, 0.15, 0.15, 0.25, 0.25, 0.35,
+         0.35] +
+        [0.65, 0.65, 0.75, 0.75, 0.85, 0.85, 0.95,
+         0.95, 1.00],
+        [0, 0.00, 0.05, 0.05, 0.40, 0.40, 0.05, 0.05,
+         0.00] +
+        [0.00, 0.05, 0.05, 0.40, 0.40, 0.05, 0.05,
+         0.00, 0.00],
+        label=r'$M_{gas}$-weighted')
+bins2 = \
+    [0.15, 0.25, 0.75, 0.85]
+csp = \
+    [0.05, 0.45, 0.55, 0.95]
+DGR16, DGR84 = np.interp([0.16, 0.84], csp, bins2)
+ax.plot([DGR16] * 2, ylim, label='16%')
+ax.plot([DGR84] * 2, ylim, label='84%')
+ax.set_xlim([0.0, 1.0])
+ax.set_ylim([0.0, 0.4/0.8])
+ax.set_xlabel('DGR')
+ax.set_ylabel('P(DGR)')
+ax.set_yticks([])
+ax.legend()
+ax.set_title('(c)', x=x, y=y)

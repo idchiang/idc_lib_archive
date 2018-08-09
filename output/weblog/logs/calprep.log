@@ -1,0 +1,31 @@
+2018-07-19 23:03:13	INFO	flagdata::::	Starting EVLA_pipe_calprep.py
+2018-07-19 23:03:13	INFO	flagdata::::	Setting models for standard primary calibrators
+2018-07-19 23:03:13	INFO	flagdata::::	Center freq for spw 0 = 1052000000.0, observing band = L
+2018-07-19 23:03:13	INFO	flagdata::::	Setting model for field 2 spw 0 using 3C286_L.im
+2018-07-19 23:03:21	INFO	setjy::::	Center freq for spw 1 = 1180000000.0, observing band = L
+2018-07-19 23:03:21	INFO	setjy::::	Setting model for field 2 spw 1 using 3C286_L.im
+2018-07-19 23:03:28	INFO	setjy::::	Center freq for spw 2 = 1308000000.0, observing band = L
+2018-07-19 23:03:28	INFO	setjy::::	Setting model for field 2 spw 2 using 3C286_L.im
+2018-07-19 23:03:35	INFO	setjy::::	Center freq for spw 3 = 1436000000.0, observing band = L
+2018-07-19 23:03:35	INFO	setjy::::	Setting model for field 2 spw 3 using 3C286_L.im
+2018-07-19 23:03:42	INFO	setjy::::	Center freq for spw 4 = 1564000000.0, observing band = L
+2018-07-19 23:03:42	INFO	setjy::::	Setting model for field 2 spw 4 using 3C286_L.im
+2018-07-19 23:03:49	INFO	setjy::::	Center freq for spw 5 = 1692000000.0, observing band = L
+2018-07-19 23:03:49	INFO	setjy::::	Setting model for field 2 spw 5 using 3C286_L.im
+2018-07-19 23:03:55	INFO	setjy::::	Center freq for spw 6 = 1820000000.0, observing band = L
+2018-07-19 23:03:55	INFO	setjy::::	Setting model for field 2 spw 6 using 3C286_L.im
+2018-07-19 23:04:02	INFO	setjy::::	Center freq for spw 7 = 1948000000.0, observing band = L
+2018-07-19 23:04:02	INFO	setjy::::	Setting model for field 2 spw 7 using 3C286_L.im
+2018-07-19 23:04:08	INFO	setjy::::	Center freq for spw 8 = 1407457156.0, observing band = L
+2018-07-19 23:04:08	INFO	setjy::::	Setting model for field 2 spw 8 using 3C286_L.im
+2018-07-19 23:04:18	INFO	setjy::::	Center freq for spw 9 = 1597532710.0, observing band = L
+2018-07-19 23:04:18	INFO	setjy::::	Setting model for field 2 spw 9 using 3C286_L.im
+2018-07-19 23:04:24	INFO	setjy::::	Center freq for spw 10 = 1650218006.0, observing band = L
+2018-07-19 23:04:24	INFO	setjy::::	Setting model for field 2 spw 10 using 3C286_L.im
+2018-07-19 23:04:31	INFO	setjy::::	Center freq for spw 11 = 1652160138.0, observing band = L
+2018-07-19 23:04:31	INFO	setjy::::	Setting model for field 2 spw 11 using 3C286_L.im
+2018-07-19 23:04:38	INFO	setjy::::	Center freq for spw 12 = 1704845434.0, observing band = L
+2018-07-19 23:04:38	INFO	setjy::::	Setting model for field 2 spw 12 using 3C286_L.im
+2018-07-19 23:04:45	INFO	setjy::::	Finished setting models for known calibrators
+2018-07-19 23:04:45	INFO	setjy::::	Finished EVLA_pipe_calprep.py
+2018-07-19 23:04:45	INFO	setjy::::	QA2 score: Pass

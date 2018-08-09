@@ -1,5 +1,5 @@
 import os
-from idc_lib.idc_plot import Dust_Plots
+from idc_lib.idc_plot_old import Dust_Plots
 # import numpy as np
 
 os.system('clear')  # on linux / os x
@@ -13,6 +13,7 @@ for m in all_:
     # plots.pdf_profiles(name, m)
     # plots.corner_plots(name, m)
     # plots.STBC_uncver(name, m)
+    # plots.realize_PDF(name, m)
 
 # plots.example_model_merged(name)
 # plots.pdf_profiles_merge(name)
@@ -21,10 +22,13 @@ for m in all_:
 # plots.residual_chi2(name)
 
 # plots.voronoi_plot()
-# plots.pdf_profiles(name, 'BE')
+plots.pdf_profiles(name, 'BE')
 # plots.kappa160_fH2()
 # plots.residual_trend()
 
 # plots.alpha_CO_test()
 # plots.pdf_profiles_four_beta()
-plots.unbinned_and_binned_gas_masp()
+# plots.unbinned_and_binned_gas_masp()
+# for i in range(20):
+#     plots.realize_vs_simple_sum(rbin_num=i)
+# plots.realize_vs_Mgas_PDF2()

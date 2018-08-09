@@ -2,9 +2,9 @@ import numpy as np
 import astropy.units as u
 from astropy.constants import c, h, k_B
 from astropy.modeling.blackbody import blackbody_lambda
-wl = np.array([100.0, 160.0, 250.0, 350.0, 500.0])
-nu = (c / wl / u.um).to(u.Hz)
-nun = nu.value
+from scipy.stats import pearsonr
+from time import clock, ctime
+
 hkB_KHz = (h / k_B).to(u.K / u.Hz).value
 B_const = 2e20 * (h / c**2).to(u.J * u.s**3 / u.m**2).value
 c_ums = c.to(u.um / u.s).value
@@ -49,15 +49,7 @@ def bin2list(data, binlist, binmap):
     return np.array([data[binmap == b][0] for b in binlist])
 
 
-# Probability functions & model functions for fitting (internal)
-def B(T, freq=nu):
-    """Return blackbody SED of temperature T(with unit) in MJy"""
-    with np.errstate(over='ignore'):
-        return (2 * h * freq**3 / c**2 / (np.exp(h * freq / k_B / T) - 1)
-                ).to(u.MJy).value
-
-
-def B_fast(T, freq=nun):
+def B_fast(T, freq):
     """ Return blackbody SED of temperature T(with unit) in MJy """
     """ Get T and freq w/o unit, assuming K and Hz """
     with np.errstate(over='ignore'):
@@ -134,3 +126,60 @@ def PowerLaw(wl, Meff, alpha, gamma, logUmin, logUmax=7.0, beta=2.0,
 
     ans += (1 - gamma) * B_fast(Tmin, freq)
     return kappa160 * (160.0 / wl)**beta * MBB_const * Meff * ans
+
+
+def normalize_pdf(pdf, axis_id):
+    sum_axes = tuple([i for i in range(pdf.ndim) if i != axis_id])
+    pdf = np.sum(pdf, axis=sum_axes)
+    return pdf / np.sum(pdf)
+
+
+def fit_DataY(DataX, DataY, DataY_err, err_bdr=0.3, quiet=False):
+    print('Calculating predicted parameter... (' + ctime() + ')')
+    tic = clock()
+    nanmask = np.isnan(DataY + DataY_err + DataX)
+    mask = ((DataY_err / DataY) < err_bdr) * ~nanmask
+    if not quiet:
+        print('Number of nan points:', np.sum(nanmask))
+        print('Number of negative yerr:', np.sum(DataY_err < 0))
+        print('Number of zero yerr:', np.sum(DataY_err == 0))
+        print('Number of available data:', mask.sum())
+        print('Correlation between DataX and DataY:',
+              pearsonr(DataX[mask], DataY[mask])[0])
+    popt, pcov = np.polyfit(x=DataX, y=DataY, deg=1, w=1/DataY_err, cov=True)
+    perr = np.sqrt(np.diag(pcov))
+    if not quiet:
+        print('Fitting coef:', popt)
+        print('Fitting err :', perr)
+    DataX[nanmask] = 0.0
+    DataY_pred = DataX * popt[0] + popt[1]
+    DataY_pred[nanmask] = np.nan
+    print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
+    return DataY_pred, popt
+
+
+def best_fit_and_error(var, pr, varname=None, quiet=True, islog=False):
+    # Calculate expectation value
+    Z = np.sum(pr)
+    expected = np.sum(var * pr) / Z
+    # "Calculate" the maximum likelihood value
+    # most_likely = var[np.unravel_index(np.argmax(pr), pr.shape)]
+    # Calculate 16-50-84
+    var_f, pr_f = var.flatten(), pr.flatten()
+    idx = np.argsort(var_f)
+    sorted_var, sorted_pr = var_f[idx], pr_f[idx]
+    csp = np.cumsum(sorted_pr)
+    csp = csp / csp[-1]
+    p16, p84 = np.interp([0.16, 0.84], csp, sorted_var)
+    # Calculate simple error
+    err = max((expected - p16), (p84 - expected))
+    # Print results to screen
+    if not quiet:
+        print('Expected', varname + ':', expected)
+        print('    ' + ' ' * len(varname) + 'error:', err)
+    # Return the results
+    if islog:
+        return 10**expected, err, \
+            max((10**expected - 10**p16), (10**p84 - 10**expected))
+    else:
+        return expected, err

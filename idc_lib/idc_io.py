@@ -40,7 +40,8 @@ class MGS(object):
         for name in names:
             self.add_galaxy(name, surveys)
 
-    def add_galaxy(self, name, surveys, filenames=None, uncfn=None):
+    def add_galaxy(self, name, surveys, filenames=None, uncfn=None,
+                   rmbkg=True):
         """  Import fits files from one galaxy """
         print('Importing', len(surveys), 'fits files of', name + '...')
         tic = clock()
@@ -275,7 +276,7 @@ class MGS(object):
         for survey in surveys:
             self.df[survey + '_CVL'] = self.df[survey + '_CVL'].astype(bool)
             self.df[survey + '_RGD'] = self.df[survey + '_RGD'].astype(bool)
-            if survey not in ['THINGS', 'HERACLES']:
+            if (survey not in ['THINGS', 'HERACLES', 'DYAS18']) and rmbkg:
                 self.bkg_removal(name, survey)
         print(" --Done. Elapsed time:", round(clock()-tic, 3), "s.\n")
 
