@@ -1,6 +1,0 @@
-2018-07-20 04:30:37	INFO	flagdata::::	Starting EVLA_pipe_targetflag.py
-2018-07-20 04:30:37	INFO	flagdata::::	Checking RFI flagging of all targets
-2018-07-20 06:29:04	INFO	flagmanager::::	Flag column saved to finalflags
-2018-07-20 06:44:52	INFO	flagdata::::	Final fraction of on-source data flagged = 0.282471679363
-2018-07-20 06:44:52	INFO	flagdata::::	QA2 score: Pass
-2018-07-20 06:44:52	INFO	flagdata::::	Finished EVLA_pipe_targetflag.py

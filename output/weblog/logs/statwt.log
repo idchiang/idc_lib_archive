@@ -1,4 +1,0 @@
-2018-07-20 06:44:52	INFO	flagdata::::	Starting EVLA_pipe_statwt.py
-2018-07-20 06:44:52	INFO	flagdata::::	Calculate data weights per spw using statwt
-2018-07-20 06:55:24	INFO	statwt::::	QA2 score: Pass
-2018-07-20 06:55:24	INFO	statwt::::	Finished EVLA_pipe_statwt.py

@@ -1,7 +1,0 @@
-2018-07-20 02:08:49	INFO	ParallelDataHelper::::	Starting EVLA_pipe_testgains.py
-2018-07-20 02:08:58	INFO	flagdata::::	The pipeline will use antenna(s) ea11,ea25,ea19,ea28 as the reference
-2018-07-20 02:08:58	INFO	flagdata::::	Doing test gain calibration
-2018-07-20 02:09:32	INFO	gaincal::::	Plotting gain solutions
-2018-07-20 02:09:56	INFO	plotcal::::	Plotting finished
-2018-07-20 02:09:59	INFO	plotcal::::	QA2 score: Pass
-2018-07-20 02:09:59	INFO	plotcal::::	Finished EVLA_pipe_testgains.py
