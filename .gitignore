@@ -1,5 +1,7 @@
 *.gz
 *.FITS
+*.fits
+*.gsheet
 *.png
 *.h5
 *.txt
@@ -9,3 +11,9 @@ output/NGC5457_pdf.csv
 *.pdf
 *.ini
 *.pyc
+data/*
+hdf5_MBBDust/*
+hdf5_MBBDust/*
+output/*
+PREVIOUS_plots/*
+Projects/*
