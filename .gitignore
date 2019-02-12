@@ -18,3 +18,5 @@ output/*
 PREVIOUS_plots/*
 Projects/*
 idc_lib/__pycache__/*
+VLA_scripted_pipeline/phangs_imaging_scripts/
+data/
