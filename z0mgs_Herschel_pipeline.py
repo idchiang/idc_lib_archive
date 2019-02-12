@@ -96,7 +96,7 @@ def mp_regrid(o, bands):
             if hdr['BUNIT'] == 'Jy/beam':
                 data *= (np.pi / 36 / 18)**(-2) / band_char[band][3]
             elif hdr['ZUNITS'] == 'MJy/sr':  # This will go wrong.
-                pass
+                pass 
             else:
                 print('Unit conversion not implemented yet')
                 print('Unit:', hdr['BUNIT'])
