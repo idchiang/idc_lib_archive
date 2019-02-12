@@ -17,3 +17,4 @@ hdf5_MBBDust/*
 output/*
 PREVIOUS_plots/*
 Projects/*
+idc_lib/__pycache__/*

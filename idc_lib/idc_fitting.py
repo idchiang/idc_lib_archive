@@ -8,11 +8,15 @@ import matplotlib.pyplot as plt
 import astropy.units as u
 from matplotlib.backends.backend_pdf import PdfPages
 from astropy.io import fits
+# from astropy.wcs import WCS
+# from astropy.coordinates import Angle
 from astropy.constants import c, N_A
 from corner import corner
+from sklearn.linear_model import LinearRegression
 # from .idc_voronoi import voronoi_m
 from .idc_functions import SEMBB, BEMBB, WD, PowerLaw, B_fast
-from .idc_functions import best_fit_and_error, normalize_pdf
+from .idc_functions import best_fit_and_error, normalize_pdf, save_fits_gz
+from .idc_fitting_old import kappa_calibration as kc_old
 from .z0mg_RSRF import z0mg_RSRF
 plt.ioff()
 
@@ -36,6 +40,7 @@ axis_ids = {'SE': {'dust.surface.density': 1, 'dust.temperature': 0,
                    'logUmin': 3}}
 
 # Grid parameters: min, max, step
+"""
 grid_para = {'dust.surface.density': [-4.,  1., 0.025],
              'dust.temperature': [5., 50., 0.5],
              'beta': [-1.0, 4.0, 0.1],
@@ -44,6 +49,15 @@ grid_para = {'dust.surface.density': [-4.,  1., 0.025],
              'alpha': [1.1, 3.0, 0.1],  # Remember to avoid alpha==1
              'gamma': [-4, 0, 0.2],
              'logUmin': [-2, 1.5, 0.1]}
+"""
+grid_para = {'dust.surface.density': [-4.,  1., 0.025],
+             'dust.temperature': [5., 50., 0.5],
+             'beta': [-1.0, 4.0, 0.1],
+             'beta2': [-1.0, 4.0, 0.1],
+             'warm.dust.fraction': [0.0, 0.05, 0.002],
+             'alpha': [1.1, 5.1, 0.2],  # Remember to avoid alpha==1
+             'gamma': [-3, 0, 0.2],
+             'logUmin': [-1.5, 1.5, 0.2]}
 # Parameter properties
 # 0: is log; 1: 1d array; 2: units[normal/log]
 v_prop = {'dust.surface.density':
@@ -79,20 +93,218 @@ cau = {'pacs': 10.0 / 100.0, 'spire': 8.0 / 100.0, 'mips': 2.0 / 100.0}
 cru = {'pacs70': 2.0 / 100, 'pacs100': 2.0 / 100, 'pacs160': 2.0 / 100,
        'spire250': 1.5 / 100, 'spire350': 1.5 / 100, 'spire500': 1.5 / 100,
        'mips24': 4.0 / 100, 'mips70': 7.0 / 100, 'mips160': 12.0 / 100}
+# For integrals
+FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15,
+        'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04,
+        'HERACLES': 13}
+
+
+def diskmask_UTOMO18(name, ress,
+                     bands=['pacs100', 'pacs160', 'spire250', 'spire350',
+                            'spire500'],
+                     datapath='data/UTOMO18_dust/',
+                     projectpath='Projects/UTOMO18/'):
+    for res in ress:
+        masks = []
+        respath = datapath + name + '/' + res + '/'
+        fns = os.listdir(respath)
+        for band in bands:
+            for fn in fns:
+                temp = fn.split('_')
+                if len(temp) < 4:
+                    continue
+                elif temp[-4] == band:
+                    if temp[-1] == 'mask.bigger.fits': 
+                        temp, hdr = fits.getdata(respath + fn, header=True)
+                        masks.append(temp.astype(bool))
+        assert len(masks) == len(bands)
+        diskmask = np.all(masks, axis=0)
+        fn = respath + name + '_diskmask.bigger.fits' 
+        fits.writeto(fn, diskmask.astype(int), hdr, overwrite=True)
+
+
+def bkgcov_UTOMO18(name, res_good, res_all,
+                   bands=['pacs100', 'pacs160', 'spire250', 'spire350',
+                          'spire500'],
+                   datapath='data/UTOMO18_dust/',
+                   projectpath='Projects/UTOMO18/'):
+    print('Generating bkgcov for', name)
+    res_good_num = [int(r.strip('res_').strip('pc')) for r in res_good]
+    res_all_num = [int(r.strip('res_').strip('pc')) for r in res_all]
+    nwl = len(bands)
+    bkgcov_good = []
+    bands_wl = ['100', '160', '250', '350', '500']
+    for res in res_good:
+        print('--good res:', res)
+        seds = []
+        respath = datapath + name + '/' + res + '/'
+        mask_fn = respath + name + '_diskmask.fits'
+        if not os.path.isfile(mask_fn):
+            diskmask_UTOMO18(name, res_good)
+        diskmask = fits.getdata(mask_fn).astype(bool)
+        fns = os.listdir(respath)
+        for band in bands:
+            for fn in fns:
+                temp = fn.split('_')
+                if len(temp) < 4:
+                    continue
+                elif temp[-4] == band:
+                    if temp[-1] != 'mask.fits':
+                        seds.append(fits.getdata(respath + fn))
+        assert len(seds) == nwl
+        seds = np.array(seds)
+        non_nanmask = np.all(np.isfinite(seds), axis=0)
+        bkgmask = (~diskmask) * non_nanmask
+        # implement outlier rejection
+        outliermask = np.zeros_like(bkgmask, dtype=bool)
+        for i in range(nwl):
+            AD = np.abs(seds[i] - np.median(seds[i][bkgmask]))
+            MAD = np.median(AD[bkgmask])
+            with np.errstate(invalid='ignore'):
+                outliermask += AD > 3 * MAD
+        bkgmask = bkgmask * (~outliermask)
+        # assert np.sum(bkgmask) > 10
+        bkgcov = np.cov(seds[:, bkgmask])
+        if name == 'm31':
+            bkgcov[0, 3] = 0
+            bkgcov[0, 4] = 0
+            bkgcov[3, 0] = 0
+            bkgcov[4, 0] = 0
+        if name == 'm33':
+            for i in range(5):
+                for j in range(5):
+                    if i != j:
+                        bkgcov[i, j] = 0
+        bkgcov_good.append(bkgcov)
+        fn = respath + name + '_bkgcov.fits'
+        fits.writeto(fn, bkgcov, overwrite=True)
+    bkgcov_check = []
+    for res in res_all[:-1]:
+        print('--check res:', res)
+        seds = []
+        respath = datapath + name + '/' + res + '/'
+        mask_fn = respath + name + '_diskmask.fits'
+        if not os.path.isfile(mask_fn):
+            diskmask_UTOMO18(name, res_good)
+        diskmask = fits.getdata(mask_fn).astype(bool)
+        fns = os.listdir(respath)
+        for band in bands:
+            for fn in fns:
+                temp = fn.split('_')
+                if len(temp) < 4:
+                    continue
+                elif temp[-4] == band:
+                    if temp[-1] != 'mask.fits':
+                        seds.append(fits.getdata(respath + fn))
+        assert len(seds) == nwl
+        seds = np.array(seds)
+        non_nanmask = np.all(np.isfinite(seds), axis=0)
+        bkgmask = (~diskmask) * non_nanmask
+        # implement outlier rejection
+        outliermask = np.zeros_like(bkgmask, dtype=bool)
+        for i in range(nwl):
+            AD = np.abs(seds[i] - np.median(seds[i][bkgmask]))
+            MAD = np.median(AD[bkgmask])
+            with np.errstate(invalid='ignore'):
+                outliermask += AD > 3 * MAD
+        bkgmask = bkgmask * (~outliermask)
+        # assert np.sum(bkgmask) > 10
+        bkgcov = np.cov(seds[:, bkgmask])
+        bkgcov_check.append(bkgcov)
+    bkgcov_check = np.array(bkgcov_check)
+    # build linear models
+    bkgcov_good = np.array(bkgcov_good)
+    models = np.empty([nwl, nwl], dtype=object)
+    for i in range(nwl):
+        for j in range(nwl):
+            models[i, j] = LinearRegression(fit_intercept=True)
+            if (name == 'm31') and \
+                    ([i, j] in ([0, 3], [0, 4], [3, 0], [4, 0])):
+                pass
+            elif (name == 'm33') and (i != j):
+                pass
+            else:
+                models[i, j].fit(np.log10(res_good_num).reshape([-1, 1]),
+                                 np.log10(np.abs(bkgcov_good[:, i, j]))
+                                 .reshape([-1, 1]))
+    # fit the rest (or maybe all)
+    bkgcov_fit = []
+    for r in range(len(res_all)):
+        res = res_all[r]
+        print('----fit res:', res)
+        res_num = res_all_num[r]
+        bkgcov = np.zeros([nwl, nwl])
+        for i in range(nwl):
+            for j in range(nwl):
+                if (name == 'm31') and \
+                        ([i, j] in ([0, 3], [0, 4], [3, 0], [4, 0])):
+                    pass
+                elif (name == 'm33') and (i != j):
+                    pass
+                else:
+                    bkgcov[i, j] = \
+                        models[i, j].predict(np.log10(res_num))[0, 0]
+                    bkgcov[i, j] = 10**bkgcov[i, j]
+        bkgcov_fit.append(bkgcov)
+        if res not in res_good:
+            respath = datapath + name + '/' + res + '/'
+            fn = respath + name + '_bkgcov.fits'
+            fits.writeto(fn, bkgcov, overwrite=True)
+    bkgcov_fit = np.array(bkgcov_fit)
+    # plot true and fitting
+    ylims = {'lmc': (5*10**(-4), 10**(1)),
+             'smc': (2*10**(-7), 7*10**(0)),
+             'm31': (10**(-5), 1.5*10**(1)),
+             'm33': (10**(-3), 10**(1))}
+    fig, ax = plt.subplots(nwl, nwl, figsize=(10, 10))
+    for i in range(nwl):
+        for j in range(nwl):
+            ax[i, j].loglog(res_all_num, bkgcov_fit[:, i, j],
+                            marker='+', ms=10, color='b', lw=0.5)
+            ax[i, j].scatter(res_all_num[:-1], bkgcov_check[:, i, j],
+                             s=20, marker='x', color='r')
+            ax[i, j].set_ylim(ylims[name])
+            ax[i, j].plot([res_good_num[-1]] * 2, ax[i, j].get_ylim(), 'k--',
+                          alpha=0.3)
+            ax[i, j].set_title(bands_wl[i] + '-' + bands_wl[j], color='k',
+                               x=0.95, y=0.8, ha='right')
+            if i == 4:
+                ax[i, j].set_xlabel('resolution (pc)')
+            else:
+                ax[i, j].set_xticklabels([])
+            if j != 0:
+                ax[i, j].set_yticklabels([])
+    fig.tight_layout()
+    fig.savefig('output/' + name + '.png')
+    plt.close('all')
 
 
 def fit_dust_density(name, beta_f, bands,
                      lambdac_f=300.0, method_abbr='FB', del_model=False,
                      fake=False, nop=5, targetSN=5, Voronoi=False,
-                     project_name='UTOMO18', save_pdfs=True,
+                     project_name='UTOMO18', save_pdfs=True, rand_cube=False,
                      observe_fns=[], mask_fn='', subdir=None,
-                     notes=''):
+                     notes='', galactic_integrated=False,
+                     better_bkgcov=None, res_arcsec=None,
+                     import_beta=False, beta_in=None, input_avg_SED=False,
+                     avg_SED=[]):
     assert len(observe_fns) == len(bands)
+    randcubesize = 100
+    #
+    nwl = len(bands)
+    diskmask, hdr = fits.getdata(mask_fn, header=True)
+    diskmask = diskmask.astype(bool)
+    list_shape = list(diskmask.shape)
+    sed = np.empty(list_shape + [nwl])
+    for i in range(nwl):
+        sed[:, :, i] = fits.getdata(observe_fns[i], header=False)
+    non_nanmask = np.all(np.isfinite(sed), axis=-1)
+    diskmask = diskmask * non_nanmask
+    bkgmask = (~diskmask) * non_nanmask
     # method_abbr: SE, FB, BE, WD, PL
     #
     # Reading wavelength #
     #
-    nwl = len(bands)
     wl = np.array([band_wl[b] for b in bands])
     # Define cali_mat2
     cali_mat2 = np.zeros([nwl, nwl])
@@ -107,22 +319,43 @@ def fit_dust_density(name, beta_f, bands,
     #
     # Reading calibration #
     #
-    fn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 1)) + '.h5'
-    try:
-        with h5py.File(fn, 'r') as hf:
-            grp = hf[method_abbr]
-            kappa160 = grp['kappa160'].value
-    except KeyError:
-        print('This method is not calibrated yet!! Starting calibration...')
-        kappa_calibration(method_abbr, beta_f=beta_f, lambdac_f=lambdac_f,
-                          nop=nop)
-        with h5py.File(fn, 'r') as hf:
-            grp = hf[method_abbr]
-            kappa160 = grp['kappa160'].value
+    if import_beta:
+        beta_in = np.round_(beta_in, 2)
+        beta_unique = np.unique(beta_in[diskmask])
+        assert len(beta_unique) < 100  # Please not too many...
+        kappa160s = {}
+        for b in beta_unique:
+            fn = 'hdf5_MBBDust/Calibration_' + str(round(b, 2)) + '.h5'
+            try:
+                with h5py.File(fn, 'r') as hf:
+                    grp = hf[method_abbr]
+                    kappa160s[b] = grp['kappa160'].value
+            except (KeyError, NameError, OSError):
+                print('This method is not calibrated yet!!',
+                      'Starting calibration...')
+                kc_old(method_abbr, beta_f=b, lambdac_f=lambdac_f,
+                       nop=nop)
+                with h5py.File(fn, 'r') as hf:
+                    grp = hf[method_abbr]
+                    kappa160s[b] = grp['kappa160'].value
+    else:
+        fn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 2)) + '.h5'
+        try:
+            with h5py.File(fn, 'r') as hf:
+                grp = hf[method_abbr]
+                kappa160 = grp['kappa160'].value
+        except (KeyError, NameError, OSError):
+            print('This method is not calibrated yet!!',
+                  'Starting calibration...')
+            kappa_calibration(method_abbr, beta_f=beta_f, lambdac_f=lambdac_f,
+                              nop=nop)
+            with h5py.File(fn, 'r') as hf:
+                grp = hf[method_abbr]
+                kappa160 = grp['kappa160'].value
     #
     """ Read HERSCHEL SED and diskmask """
     #
-    betastr = 'free' if method_abbr == 'SE' else str(round(beta_f, 1))
+    betastr = 'free' if method_abbr == 'SE' else str(round(beta_f, 2))
     longname = name + ' ' + method_abbr + '.beta=' + betastr + ' ' + notes
     #
     print('################################################')
@@ -131,16 +364,58 @@ def fit_dust_density(name, beta_f, bands,
     # Dust density in Solar Mass / pc^2
     # kappa_lambda in cm^2 / g
     # SED in MJy / sr
-    diskmask, hdr = fits.getdata(mask_fn, header=True)
-    diskmask = diskmask.astype(bool)
-    list_shape = list(diskmask.shape)
-    sed = np.empty(list_shape + [nwl])
-    for i in range(nwl):
-        sed[:, :, i] = fits.getdata(observe_fns[i], header=False)
-    non_nanmask = np.all(np.isfinite(sed), axis=-1)
-    bkgmask = (~diskmask) * non_nanmask
-    diskmask = diskmask * non_nanmask
-    bkgcov = np.cov(sed[bkgmask].T)
+    if better_bkgcov is None:
+        # implement outlier rejection
+        outliermask = np.zeros_like(bkgmask, dtype=bool)
+        for i in range(nwl):
+            AD = np.abs(sed[:, :, i] - np.median(sed[bkgmask][i]))
+            MAD = np.median(AD[bkgmask])
+            with np.errstate(invalid='ignore'):
+                outliermask += AD > 3 * MAD
+        bkgmask = bkgmask * (~outliermask)
+        new_bkgmask = bkgmask * (~outliermask)
+        # assert np.sum(bkgmask) > 10
+        bkgcov = np.cov(sed[new_bkgmask].T)
+    else:
+        bkgcov = better_bkgcov
+    #
+    if galactic_integrated:
+        # bkgcov = better_bkgcov
+        bkgcov = np.zeros([nwl, nwl])  # Power law approximation
+        if input_avg_SED:
+            sed_avg = np.array(avg_SED)
+        else:
+            sed_avg = np.array([np.mean(sed[:, :, i][diskmask]) for i in
+                                range(nwl)])
+        sed = sed_avg.reshape(1, 1, nwl)
+        diskmask = np.ones([1, 1]).astype(int)
+        list_shape = [1, 1]
+        """
+        spire500_beamsize = 1804.31
+        ctr = np.array(list_shape) // 2
+        #
+        num_pix_inte = np.sum(diskmask)
+        sed_avg = np.array([np.mean(sed[:, :, i][diskmask]) for i in
+                            range(nwl)])
+        sed = sed_avg.reshape(1, 1, nwl)
+        diskmask = np.ones([1, 1]).astype(int)
+        list_shape = [1, 1]
+        #
+        ps = np.zeros(2)
+        w = WCS(hdr, naxis=2)
+        xs, ys = \
+            w.wcs_pix2world([ctr[0] - 1, ctr[0] + 1, ctr[0], ctr[0]],
+                            [ctr[1], ctr[1], ctr[1] - 1, ctr[1] + 1], 1)
+        ps[0] = np.abs(xs[0] - xs[1]) / 2 * \
+            np.cos(Angle((ys[0] + ys[1]) * u.deg).rad / 2)
+        ps[1] = np.abs(ys[3] - ys[2]) / 2
+        ps *= u.degree.to(u.arcsec)
+        ps = np.mean(ps)
+        resolution_element = np.pi * (FWHM['SPIRE_500'] / 2)**2 / ps**2
+        num_res = num_pix_inte / resolution_element
+        if num_res > 1:
+            bkgcov /= num_res
+        """
     #
     """ Voronoi binning """
     #
@@ -149,37 +424,74 @@ def fit_dust_density(name, beta_f, bands,
     #
     """ Build or load SED models """
     # Should be a for loop or something like that here
-    models = []
-    if del_model:
+    if import_beta:
+        modelss = {}
+        for be in beta_unique:
+            models = []
+            if del_model:
+                for b in bands:
+                    fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
+                        str(round(be, 2)) + '.fits.gz'
+                    if os.path.isfile(fn):
+                        os.remove(fn)
+            for b in bands:
+                fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
+                    str(round(be, 2)) + '.fits.gz'
+                if not os.path.isfile(fn):
+                    if method_abbr in ['SE']:
+                        filelist = os.listdir('models')
+                        new_fn = ''
+                        for f in filelist:
+                            temp = f.split('_')
+                            if len(temp) > 1:
+                                if (temp[0] == b) and \
+                                        (temp[1][:2] == method_abbr):
+                                    new_fn = f
+                                    break
+                        if new_fn == '':
+                            models_creation(method_abbr, be, lambdac_f,
+                                            band_instr[b], kappa160s[be], nop)
+                        else:
+                            fn = new_fn
+                    else:
+                        models_creation(method_abbr, be, lambdac_f,
+                                        band_instr[b], kappa160s[be], nop)
+                models.append(fits.getdata(fn))
+            models = np.array(models)
+            models = np.moveaxis(models, 0, -1)
+            modelss[be] = models
+    else:
+        models = []
+        if del_model:
+            for b in bands:
+                fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
+                    str(round(beta_f, 2)) + '.fits.gz'
+                if os.path.isfile(fn):
+                    os.remove(fn)
         for b in bands:
             fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
-                str(round(beta_f, 1)) + '.fits.gz'
-            if os.path.isfile(fn):
-                os.remove(fn)
-    for b in bands:
-        fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
-            str(round(beta_f, 1)) + '.fits.gz'
-        if not os.path.isfile(fn):
-            if method_abbr in ['SE']:
-                filelist = os.listdir('models')
-                new_fn = ''
-                for f in filelist:
-                    temp = f.split('_')
-                    if len(temp) > 1:
-                        if (temp[0] == b) and (temp[1][:2] == method_abbr):
-                            new_fn = f
-                            break
-                if new_fn == '':
+                str(round(beta_f, 2)) + '.fits.gz'
+            if not os.path.isfile(fn):
+                if method_abbr in ['SE']:
+                    filelist = os.listdir('models')
+                    new_fn = ''
+                    for f in filelist:
+                        temp = f.split('_')
+                        if len(temp) > 1:
+                            if (temp[0] == b) and (temp[1][:2] == method_abbr):
+                                new_fn = f
+                                break
+                    if new_fn == '':
+                        models_creation(method_abbr, beta_f, lambdac_f,
+                                        band_instr[b], kappa160, nop)
+                    else:
+                        fn = new_fn
+                else:
                     models_creation(method_abbr, beta_f, lambdac_f,
                                     band_instr[b], kappa160, nop)
-                else:
-                    fn = new_fn
-            else:
-                models_creation(method_abbr, beta_f, lambdac_f, band_instr[b],
-                                kappa160, nop)
-        models.append(fits.getdata(fn))
-    models = np.array(models)
-    models = np.moveaxis(models, 0, -1)
+            models.append(fits.getdata(fn))
+        models = np.array(models)
+        models = np.moveaxis(models, 0, -1)
     #
     """ Real fitting starts """
     #
@@ -189,16 +501,37 @@ def fit_dust_density(name, beta_f, bands,
     temp_linear = np.full([2] + list_shape, np.nan)
     recovered_sed = np.full([nwl] + list_shape, np.nan)
     chi2_map = np.full(sed.shape[:2], np.nan)
-    v_map = {}
+    v_map, v_min, v_max = {}, {}, {}
     for p in parameters[method_abbr]:
         v_map[p] = np.full_like(temp_log, np.nan) if v_prop[p][0] else \
             np.full_like(temp_linear, np.nan)
+        v_min[p] = np.full(list_shape, np.nan)
+        v_max[p] = np.full(list_shape, np.nan)
     del temp_log, temp_linear
+    #
+    if (method_abbr == 'PL') and galactic_integrated:
+        logSigmads, alphas, gammas, Umins = \
+            np.meshgrid(v_prop['dust.surface.density'][1],
+                        v_prop['alpha'][1],
+                        10**v_prop['gamma'][1],
+                        10**v_prop['logUmin'][1])
+        logUbars = np.log10((1 - gammas) * Umins + gammas * Umins *
+                            np.log(10**3 / Umins) / (1 - Umins / 10**3))
+        idx = np.argsort(logUbars.flatten())
+        logUbars_sorted = logUbars.flatten()[idx]
+        logUbar_map = np.full(list_shape, np.nan)
+        logUbar_min = np.full(list_shape, np.nan)
+        logUbar_max = np.full(list_shape, np.nan)
+        del logSigmads, alphas, gammas, Umins, logUbars
     #
     if save_pdfs:
         v_pdf = {}
         for p in parameters[method_abbr]:
             v_pdf[p] = np.full([len(v_prop[p][1])] + list_shape, np.nan)
+    if rand_cube:
+        v_real = {}
+        for p in parameters[method_abbr]:
+            v_real[p] = np.full([randcubesize] + list_shape, np.nan)
     #
     # Pre fitting variable definitions
     #
@@ -208,7 +541,8 @@ def fit_dust_density(name, beta_f, bands,
         steps = np.arange(diskmask.size)[diskmask.flatten() == 1]
     total_steps = len(steps)
 
-    def mp_fitting(mpid, mp_var, mp_pdf, mp_rec_sed, mp_chi2):
+    def mp_fitting(mpid, mp_var, mp_pdf, mp_rec_sed, mp_chi2, mp_realcube,
+                   mp_logUbar):
         qi = int(total_steps * mpid / nop)
         qf = int(total_steps * (mpid + 1) / nop)
         progress = 0.0
@@ -231,12 +565,23 @@ def fit_dust_density(name, beta_f, bands,
             #
             """ Calculate chi^2 values """
             #
-            diff = models - sed[i, j]
+            if import_beta:
+                diff = modelss[beta_in[i, j]] - sed[i, j]
+            else:
+                diff = models - sed[i, j]
             shape0 = list(diff.shape)[:-1]
             shape1 = shape0 + [1, nwl]
             shape2 = shape0 + [nwl, 1]
             chi2 = np.matmul(np.matmul(diff.reshape(shape1), cov_n1),
                              diff.reshape(shape2)).reshape(shape0)
+            if np.any(chi2 < 0):
+                mask = chi2 < 0
+                print(mpid, 'chi2 < 0!!!\n',
+                      mpid, 'chi2 =', chi2[mask][0], '\n',
+                      mpid, 'diff =', diff[mask][0], '\n',
+                      mpid, 'model =', models[mask][0], '\n',
+                      mpid, 'SED =', sed[i, j], '\n',
+                      mpid, 'cov_n1 =', cov_n1)
             pr = np.exp(-0.5 * chi2)
             #
             """ Save fitting results """
@@ -246,32 +591,82 @@ def fit_dust_density(name, beta_f, bands,
             for p in parameters[method_abbr]:
                 temp_pdf = normalize_pdf(pr, axis_id[p])
                 _vars.append(best_fit_and_error(v_prop[p][1], temp_pdf,
-                                                islog=v_prop[p][0]))
+                                                islog=v_prop[p][0],
+                                                minmax=True))
                 if save_pdfs:
                     _pdfs.append(temp_pdf)
             mp_var[q] = _vars
+            """ Save Ubar """
+            if (method_abbr == 'PL') and galactic_integrated:
+                pr_sorted = pr.flatten()[idx] / np.sum(pr)
+                # exp
+                pexp = np.sum(logUbars_sorted * pr_sorted)
+                # 1684
+                csp = np.cumsum(pr_sorted)
+                csp = csp / csp[-1]
+                p16, p84 = np.interp([0.16, 0.84], csp, logUbars_sorted)
+                _logubar = [pexp, p16, p84]
+                mp_logUbar[q] = _logubar
+                del pr_sorted
             """ Save PDFs """
             if save_pdfs:
                 mp_pdf[q] = _pdfs
+            """ Save randomly chosen randcubesize points from cube """
+            if rand_cube:
+                # realization pool
+                rs = np.random.choice(np.arange(chi2.size), randcubesize,
+                                      replace=True,
+                                      p=pr.flatten() / np.sum(pr))
+                npara = len(parameters[method_abbr])
+                _randcube = np.full([npara, randcubesize], np.nan)
+                for ri in range(randcubesize):
+                    coor = np.unravel_index(rs[ri], chi2.shape)
+                    for pi in range(npara):
+                        p = parameters[method_abbr][pi]
+                        _randcube[pi, ri] = v_prop[p][1][coor[axis_id[p]]]
+                """ Save the cube """
+                mp_realcube[q] = _randcube
             #
             """ Recover SED from best fit. Save SED and chi^2 values """
             #
-            if method_abbr == 'SE':
-                rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], _vars[2][0],
-                                kappa160=kappa160)
-            elif method_abbr == 'FB':
-                rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
-                                kappa160=kappa160)
-            elif method_abbr == 'BE':
-                rec_sed = BEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
-                                lambdac_f, _vars[2][0], kappa160=kappa160)
-            elif method_abbr == 'WD':
-                rec_sed = WD(wl, _vars[0][0], _vars[1][0], beta_f,
-                             _vars[2][0], kappa160=kappa160)
-            elif method_abbr == 'PL':
-                rec_sed = PowerLaw(wl, _vars[0][0], _vars[1][0],
-                                   _vars[2][0], _vars[3][0], beta=beta_f,
-                                   kappa160=kappa160)
+            if import_beta:
+                if method_abbr == 'SE':
+                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], _vars[2][0],
+                                    kappa160=kappa160s[beta_in[i, j]])
+                elif method_abbr == 'FB':
+                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0],
+                                    beta_in[i, j],
+                                    kappa160=kappa160s[beta_in[i, j]])
+                elif method_abbr == 'BE':
+                    rec_sed = BEMBB(wl, _vars[0][0], _vars[1][0],
+                                    beta_in[i, j], lambdac_f, _vars[2][0],
+                                    kappa160=kappa160s[beta_in[i, j]])
+                elif method_abbr == 'WD':
+                    rec_sed = WD(wl, _vars[0][0], _vars[1][0], beta_in[i, j],
+                                 _vars[2][0],
+                                 kappa160=kappa160s[beta_in[i, j]])
+                elif method_abbr == 'PL':
+                    rec_sed = PowerLaw(wl, _vars[0][0], _vars[1][0],
+                                       _vars[2][0], _vars[3][0],
+                                       beta=beta_in[i, j],
+                                       kappa160=kappa160s[beta_in[i, j]])
+            else:
+                if method_abbr == 'SE':
+                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], _vars[2][0],
+                                    kappa160=kappa160)
+                elif method_abbr == 'FB':
+                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
+                                    kappa160=kappa160)
+                elif method_abbr == 'BE':
+                    rec_sed = BEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
+                                    lambdac_f, _vars[2][0], kappa160=kappa160)
+                elif method_abbr == 'WD':
+                    rec_sed = WD(wl, _vars[0][0], _vars[1][0], beta_f,
+                                 _vars[2][0], kappa160=kappa160)
+                elif method_abbr == 'PL':
+                    rec_sed = PowerLaw(wl, _vars[0][0], _vars[1][0],
+                                       _vars[2][0], _vars[3][0], beta=beta_f,
+                                       kappa160=kappa160)
             mp_rec_sed[q] = rec_sed
             diff = rec_sed - sed[i, j]
             shape1 = [1, nwl]
@@ -286,11 +681,16 @@ def fit_dust_density(name, beta_f, bands,
     print("Total number of cores:", nop)
 
     mp_chi2 = mp.Manager().list([0.] * total_steps)
+    mp_logUbar = mp.Manager().list([0., 0., 0.] * total_steps)
     mp_rec_sed = mp.Manager().list([[0., 0., 0., 0., 0.]] * total_steps)
     mp_var = mp.Manager().list([[0., 0., 0.]] * total_steps)
-    mp_pdf = mp.Manager().list([[0., 0., 0.]] * total_steps)
+    mp_pdf = mp.Manager().list([[0., 0., 0.]] * total_steps) \
+        if save_pdfs else -1
+    mp_realcube = mp.Manager().list([[0., 0., 0.]] * total_steps) \
+        if rand_cube else -1
     processes = [mp.Process(target=mp_fitting,
-                            args=(mpid, mp_var, mp_pdf, mp_rec_sed, mp_chi2))
+                            args=(mpid, mp_var, mp_pdf, mp_rec_sed, mp_chi2,
+                                  mp_realcube, mp_logUbar))
                  for mpid in range(nop)]
     for p in processes:
         p.start()
@@ -308,8 +708,16 @@ def fit_dust_density(name, beta_f, bands,
         i, j = np.unravel_index(k, diskmask.shape)
         rid = 0
         for p in parameters[method_abbr]:
-            v_map[p][:, i, j] = mp_var[q][rid]
+            v_map[p][0, i, j] = mp_var[q][rid][0]
+            v_min[p][i, j] = mp_var[q][rid][1]
+            v_max[p][i, j] = mp_var[q][rid][2]
             rid += 1
+        #
+        """ Save Ubar """
+        if (method_abbr == 'PL') and galactic_integrated:
+            logUbar_map[i, j] = mp_logUbar[q][0]
+            logUbar_min[i, j] = mp_logUbar[q][1]
+            logUbar_max[i, j] = mp_logUbar[q][2]
         #
         """ Save PDFs """
         #
@@ -319,10 +727,31 @@ def fit_dust_density(name, beta_f, bands,
                 v_pdf[p][:, i, j] = mp_pdf[q][rid]
                 rid += 1
         #
+        """ Save the randomly selected cube """
+        #
+        rid = 0
+        if rand_cube:
+            for p in parameters[method_abbr]:
+                v_real[p][:, i, j] = mp_realcube[q][rid]
+                rid += 1
+        #
         """ Recover SED from best fit. Save SED and chi^2 values """
         #
         recovered_sed[:, i, j] = mp_rec_sed[q]
         chi2_map[i, j] = mp_chi2[q]
+
+    # build error map
+    for p in parameters[method_abbr]:
+        if v_prop[p][0]:  # log case
+            v_map[p][1] = np.max([np.log10(v_max[p]) - np.log10(v_map[p][0]),
+                                  np.log10(v_map[p][0]) - np.log10(v_min[p])],
+                                 axis=0)
+            v_map[p][2] = np.max([v_max[p] - v_map[p][0],
+                                  v_map[p][0] - v_min[p]], axis=0)
+        else:  # linear case
+            v_map[p][1] = np.max([v_max[p] - v_map[p][0],
+                                  v_map[p][0] - v_min[p]], axis=0)
+
     print("Loading finished.")
     #
     outputpath = 'Projects/' + project_name + '/'
@@ -338,73 +767,141 @@ def fit_dust_density(name, beta_f, bands,
     #
     fnhead = outputpath + name + '_'
     fnend = '_' + method_abbr + '.beta=' + betastr + '_' + notes + '.fits'
+    os.system('find ' + outputpath + ' -name "*.gz" -delete')
+    os.system('find ' + outputpath + ' -name "*.png" -delete')
     #
-    for p in parameters[method_abbr]:
-        hdr2 = hdr.copy()
-        hdr2['NAXIS'] = 3
-        hdr2['NAXIS3'] = 3 if v_prop[p][0] else 2
-        hdr2['PLANE0'] = 'Expectation value (linear)'
-        if v_prop[p][0]:  # log case
-            hdr2['PLANE1'] = 'Error map (dex)'
-            hdr2['PLANE2'] = 'Error map (linear)'
-        else:  # linear case
-            hdr2['PLANE1'] = 'Error map'
-        hdr2['BUNIT'] = v_prop[p][2][0]
-        fn = fnhead + p + fnend
-        fits.writeto(fn, v_map[p], hdr2, overwrite=True)
+    if galactic_integrated:
+        df = pd.DataFrame()
+        for bi in range(nwl):
+            df[bands[bi]] = [sed[0, 0, bi]]
+        for p in parameters[method_abbr]:
+            df[p] = [v_map[p][0, 0, 0]]
+            df[p + '.err'] = [v_map[p][1, 0, 0]]
+            df[p + '.max'] = [v_max[p][0, 0]]
+            df[p + '.min'] = [v_min[p][0, 0]]
+        if method_abbr == 'PL':
+            df['Tbar'] = 18 * 10**(logUbar_map[0, 0] / (4 + beta_f))
+            df['Tbar.max'] = 18 * 10**(logUbar_max[0, 0] / (4 + beta_f))
+            df['Tbar.min'] = 18 * 10**(logUbar_min[0, 0] / (4 + beta_f))
+        fn = fnhead + 'integrated.csv'
+        df.to_csv(fn, index=False)
         #
-        if save_pdfs:
+        for p in parameters[method_abbr]:
+            if save_pdfs:
+                hdr2 = hdr.copy()
+                hdr2['NAXIS'] = 3
+                hdr2['NAXIS3'] = v_pdf[p].shape[0]
+                hdr2['BUNIT'] = ''
+                t1, t2, t3 = round(grid_para[p][0], 1), \
+                    round(grid_para[p][1], 1), round(grid_para[p][2], 3)
+                hdr2['PDF_MIN'] = t1
+                hdr2['PDF_MAX'] = t2
+                hdr2.comments['PDF_MAX'] = 'EXCLUSIVE'
+                hdr2['PDF_STEP'] = t3
+                if v_prop[p][0]:  # log case
+                    hdr2.comments['PDF_MIN'] = 'IN LOG.'
+                    hdr2.comments['PDF_MAX'] = 'IN LOG. EXCLUSIVE.'
+                    hdr2.comments['PDF_STEP'] = 'IN LOG. EXCLUSIVE.'
+                    hdr2['PDFARRAY'] = '10**np.arange(' + str(t1) + ', ' + \
+                        str(t2) + ', ' + str(t3) + ')'
+                else:  # linear case
+                    hdr2.comments['PDF_MIN'] = 'LINEAR.'
+                    hdr2.comments['PDF_MAX'] = 'LINEAR. EXCLUSIVE.'
+                    hdr2.comments['PDF_STEP'] = 'LINEAR. EXCLUSIVE.'
+                    hdr2['PDFARRAY'] = 'np.arange(' + str(t1) + ', ' + \
+                        str(t2) + ', ' + str(t3) + ')'
+                fn = fnhead + p + '.pdf' + fnend
+                save_fits_gz(fn, v_pdf[p], hdr2)
+            #
+            if rand_cube:
+                hdr2 = hdr.copy()
+                hdr2['NAXIS'] = 3
+                hdr2['NAXIS3'] = randcubesize
+                hdr2['BUNIT'] = v_prop[p][2][0]
+                fn = fnhead + p + '.rlcube' + fnend
+                if v_prop[p][0]:  # log case
+                    with np.errstate(invalid='ignore'):
+                        save_fits_gz(fn, 10**v_real[p], hdr2)
+                else:  # linear case
+                    save_fits_gz(fn, v_real[p], hdr2)
+    else:
+        for p in parameters[method_abbr]:
             hdr2 = hdr.copy()
             hdr2['NAXIS'] = 3
-            hdr2['NAXIS3'] = v_pdf[p].shape[0]
-            hdr2['BUNIT'] = ''
-            t1, t2, t3 = round(grid_para[p][0], 1), \
-                round(grid_para[p][1], 1), round(grid_para[p][2], 3)
-            hdr2['PDF_MIN'] = t1
-            hdr2['PDF_MAX'] = t2
-            hdr2.comments['PDF_MAX'] = 'EXCLUSIVE'
-            hdr2['PDF_STEP'] = t3
+            hdr2['NAXIS3'] = 3 if v_prop[p][0] else 2
+            hdr2['PLANE0'] = 'Expectation value (linear)'
             if v_prop[p][0]:  # log case
-                hdr2.comments['PDF_MIN'] = 'IN LOG.'
-                hdr2.comments['PDF_MAX'] = 'IN LOG. EXCLUSIVE.'
-                hdr2.comments['PDF_STEP'] = 'IN LOG. EXCLUSIVE.'
-                hdr2['PDFARRAY'] = '10**np.arange(' + str(t1) + ', ' + \
-                    str(t2) + ', ' + str(t3) + ')'
+                hdr2['PLANE1'] = 'Error map (dex)'
+                hdr2['PLANE2'] = 'Error map (linear)'
             else:  # linear case
-                hdr2.comments['PDF_MIN'] = 'LINEAR.'
-                hdr2.comments['PDF_MAX'] = 'LINEAR. EXCLUSIVE.'
-                hdr2.comments['PDF_STEP'] = 'LINEAR. EXCLUSIVE.'
-                hdr2['PDFARRAY'] = 'np.arange(' + str(t1) + ', ' + \
-                    str(t2) + ', ' + str(t3) + ')'
-            fn = fnhead + p + '.pdf' + fnend
-            fits.writeto(fn, v_pdf[p], hdr2, overwrite=True)
-    #
-    hdr2 = hdr.copy()
-    hdr2['NAXIS'] = 3
-    hdr2['NAXIS3'] = nwl
-    for i in range(nwl):
-        hdr2['PLANE' + str(i)] = bands[i]
-    fn = fnhead + 'recoverd_SED' + fnend
-    fits.writeto(fn, recovered_sed, hdr2, overwrite=True)
+                hdr2['PLANE1'] = 'Error map'
+            hdr2['BUNIT'] = v_prop[p][2][0]
+            fn = fnhead + p + fnend
+            save_fits_gz(fn, v_map[p], hdr2)
+            #
+            hdr2 = hdr.copy()
+            hdr2['NAXIS'] = 2
+            hdr2['PLANE0'] = 'Maximum possible value (linear)'
+            hdr2['BUNIT'] = v_prop[p][2][0]
+            fn = fnhead + p + '.max' + fnend
+            save_fits_gz(fn, v_max[p], hdr2)
+            hdr2['PLANE0'] = 'Minimum possible value (linear)'
+            fn = fnhead + p + '.min' + fnend
+            save_fits_gz(fn, v_min[p], hdr2)
+            #
+            if save_pdfs:
+                hdr2 = hdr.copy()
+                hdr2['NAXIS'] = 3
+                hdr2['NAXIS3'] = v_pdf[p].shape[0]
+                hdr2['BUNIT'] = ''
+                t1, t2, t3 = round(grid_para[p][0], 1), \
+                    round(grid_para[p][1], 1), round(grid_para[p][2], 3)
+                hdr2['PDF_MIN'] = t1
+                hdr2['PDF_MAX'] = t2
+                hdr2.comments['PDF_MAX'] = 'EXCLUSIVE'
+                hdr2['PDF_STEP'] = t3
+                if v_prop[p][0]:  # log case
+                    hdr2.comments['PDF_MIN'] = 'IN LOG.'
+                    hdr2.comments['PDF_MAX'] = 'IN LOG. EXCLUSIVE.'
+                    hdr2.comments['PDF_STEP'] = 'IN LOG. EXCLUSIVE.'
+                    hdr2['PDFARRAY'] = '10**np.arange(' + str(t1) + ', ' + \
+                        str(t2) + ', ' + str(t3) + ')'
+                else:  # linear case
+                    hdr2.comments['PDF_MIN'] = 'LINEAR.'
+                    hdr2.comments['PDF_MAX'] = 'LINEAR. EXCLUSIVE.'
+                    hdr2.comments['PDF_STEP'] = 'LINEAR. EXCLUSIVE.'
+                    hdr2['PDFARRAY'] = 'np.arange(' + str(t1) + ', ' + \
+                        str(t2) + ', ' + str(t3) + ')'
+                fn = fnhead + p + '.pdf' + fnend
+                save_fits_gz(fn, v_pdf[p], hdr2)
+            #
+            if rand_cube:
+                hdr2 = hdr.copy()
+                hdr2['NAXIS'] = 3
+                hdr2['NAXIS3'] = randcubesize
+                hdr2['BUNIT'] = v_prop[p][2][0]
+                fn = fnhead + p + '.rlcube' + fnend
+                if v_prop[p][0]:  # log case
+                    with np.errstate(invalid='ignore'):
+                        save_fits_gz(fn, 10**v_real[p], hdr2)
+                else:  # linear case
+                    save_fits_gz(fn, v_real[p], hdr2)
     #
     hdr2 = hdr.copy()
     hdr2['NAXIS'] = 2
     hdr2['PLANE0'] = 'chi-2 map'
     hdr2['BUNIT'] = ''
     fn = fnhead + 'chi2' + fnend
-    fits.writeto(fn, chi2_map, hdr2, overwrite=True)
+    save_fits_gz(fn, chi2_map, hdr2)
     #
-    fn = fnhead + 'bkgcov' + fnend
-    fits.writeto(fn, bkgcov, overwrite=True)
-    fn = fnhead + 'cali.mat2' + fnend
-    fits.writeto(fn, cali_mat2, overwrite=True)
+    hdr2 = hdr.copy()
+    hdr2['NAXIS'] = 2
+    hdr2['PLANE0'] = 'bkg mask'
+    hdr2['BUNIT'] = ''
+    fn = fnhead + 'bkgmask' + fnend
+    save_fits_gz(fn, bkgmask.astype(int), hdr2)
     #
     print(longname, "Datasets saved.")
-    print("Compressing fits files...")
-    os.system('find ' + outputpath + ' -name "*.gz" -delete')
-    os.system('find ' + outputpath + ' -name "*.png" -delete')
-    os.system("gzip -rf " + outputpath)
-    print("fits files compressed.")
 
 
 def models_creation(method_abbr, beta_f, lambdac_f, instr, kappa160, nop):
@@ -505,11 +1002,9 @@ def models_creation(method_abbr, beta_f, lambdac_f, instr, kappa160, nop):
             np.sum(h_models * rsps, axis=-1) / \
             np.sum(rsps * _wl / band_wl[b])
         fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
-            str(round(beta_f, 1)) + '.fits'
-        fits.writeto(fn, models, overwrite=True)
-        print("Models saved. Start compressing.")
-        os.system("gzip -rf " + fn)
-        print("Models compressed.")
+            str(round(beta_f, 2)) + '.fits'
+        save_fits_gz(fn, models, None)
+        print("Models saved.")
 
 
 def kappa_calibration(method_abbr, beta_f, lambdac_f=300.0,
@@ -745,7 +1240,7 @@ def kappa_calibration(method_abbr, beta_f, lambdac_f=300.0,
         print('Best fit kappa160:', kappa160)
         wl_complete = np.linspace(1, 1000, 1000)
         #
-        fn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 1)) + '.h5'
+        fn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 2)) + '.h5'
         hf = h5py.File(fn, 'a')
         try:
             del hf[method_abbr]

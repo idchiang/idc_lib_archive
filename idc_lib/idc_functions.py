@@ -1,5 +1,9 @@
+import os
+import gzip
+import shutil
 import numpy as np
 import astropy.units as u
+from astropy.io import fits
 from astropy.constants import c, h, k_B
 from astropy.modeling.blackbody import blackbody_lambda
 from scipy.stats import pearsonr
@@ -11,7 +15,7 @@ c_ums = c.to(u.um / u.s).value
 MBB_const = 0.00020884262122368297
 MWT = 18.0
 WDT = 40.0
-logUmax = 7.0
+logUmax = 3.0
 Umax = 10**logUmax
 
 """
@@ -90,7 +94,7 @@ def BEMBB(wl, sigma, T, beta, lambda_c, beta2, kappa160=24.8):
         return ans
 
 
-def PowerLaw(wl, Meff, alpha, gamma, logUmin, logUmax=7.0, beta=2.0,
+def PowerLaw(wl, Meff, alpha, gamma, logUmin, logUmax=logUmax, beta=2.0,
              kappa160=1e2, dlogU=0.02, MWT=MWT):
     freq = c_ums / wl
     x = beta + 4.0
@@ -158,12 +162,14 @@ def fit_DataY(DataX, DataY, DataY_err, err_bdr=0.3, quiet=False):
     return DataY_pred, popt
 
 
-def best_fit_and_error(var, pr, varname=None, quiet=True, islog=False):
+def best_fit_and_error(var, pr, varname=None, quiet=True, islog=False,
+                       minmax=False):
+    best_est = 'exp'
     # Calculate expectation value
     Z = np.sum(pr)
     expected = np.sum(var * pr) / Z
     # "Calculate" the maximum likelihood value
-    # most_likely = var[np.unravel_index(np.argmax(pr), pr.shape)]
+    most_likely = var[np.unravel_index(np.argmax(pr), pr.shape)]
     # Calculate 16-50-84
     var_f, pr_f = var.flatten(), pr.flatten()
     idx = np.argsort(var_f)
@@ -172,14 +178,48 @@ def best_fit_and_error(var, pr, varname=None, quiet=True, islog=False):
     csp = csp / csp[-1]
     p16, p84 = np.interp([0.16, 0.84], csp, sorted_var)
     # Calculate simple error
-    err = max((expected - p16), (p84 - expected))
+    if best_est == 'exp':
+        best = expected
+    elif best_est == 'max':
+        best = most_likely
+    err = max((best - p16), (p84 - best))
     # Print results to screen
     if not quiet:
-        print('Expected', varname + ':', expected)
+        print('Best', varname + ':', best)
         print('    ' + ' ' * len(varname) + 'error:', err)
     # Return the results
-    if islog:
-        return 10**expected, err, \
-            max((10**expected - 10**p16), (10**p84 - 10**expected))
+    if minmax:
+        if islog:
+            return 10**best, 10**p16, 10**p84
+        else:
+            return best, p16, p84
     else:
-        return expected, err
+        if islog:
+            return 10**best, err, \
+                max((10**best - 10**p16), (10**p84 - 10**best))
+        else:
+            return best, err
+
+
+def reasonably_close(a, b, pct_err):
+    return np.sqrt(np.sum((a - b)**2) / np.sum(a**2)) < (pct_err / 100)
+
+
+def save_fits_gz(fn, data, hdr):
+    if os.path.isfile(fn + '.gz'):
+        os.remove(fn + '.gz')
+    if data.dtype == bool:
+        fits.writeto(fn, data.astype(int), hdr, overwrite=True)
+    else:
+        fits.writeto(fn, data, hdr, overwrite=True)
+    # os.system("gzip -f " + fn)
+    with open(fn, 'rb') as f_in:
+        with gzip.open(fn + '.gz', 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+    os.remove(fn)
+
+
+def error_msg(fn, msg):
+    file = open(fn, 'a')
+    file.write('\n' + msg + '\n')
+    file.close()

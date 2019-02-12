@@ -2,7 +2,7 @@ import h5py
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-# import pandas as pd
+import pandas as pd
 # import multiprocessing as mp
 # import seaborn as sns
 # from matplotlib.colors import LogNorm
@@ -16,6 +16,7 @@ from astropy.io import fits
 # from .gal_data import gal_data
 from .idc_functions import SEMBB, BEMBB, WD, PowerLaw
 from .idc_fitting import parameters, band_wl, band_cap, v_prop
+from .z0mg_RSRF import z0mg_RSRF
 
 plt.ioff()
 
@@ -44,7 +45,7 @@ class Dust_Plots(object):
                     lambdac_f=300, project_name='', filepath='', datapath='',
                     bands=[]):
         # Pre-prosessing
-        beta_f = round(beta_f, 1)
+        beta_f = round(beta_f, 2)
         if type(bands) != np.ndarray:
             bands = np.array(bands)
         wl = np.array([band_wl[b] for b in bands])
@@ -769,3 +770,340 @@ class Dust_Plots(object):
                             sed[i] = temp
                             break
         return sed, diskmask
+
+    def integrated_model_FB(self, project_path='Projects/UTOMO18/'):
+        plt.close('all')
+        method_abbr = 'FB'
+        beta_f = str(1.8)
+        bands = ['pacs100', 'pacs160', 'spire250', 'spire350', 'spire500']
+        wl = np.array([100, 160, 250, 350, 500])
+        nwl = len(bands)
+        objects = ['smc', 'lmc', 'm31', 'm33']
+        wl_complete = np.linspace(1, 800, 1000)
+        #
+        if beta_f == '2.0':
+            fn = 'hdf5_MBBDust/Calibration.h5'
+        else:
+            fn = 'hdf5_MBBDust/Calibration_' + beta_f + '.h5'
+        with h5py.File(fn, 'r') as hf:
+            grp = hf[method_abbr]
+            kappa160 = grp['kappa160'].value
+        #
+        fig, ax = plt.subplots(2, 2, figsize=(10, 8))
+        for ai in range(4):
+            name = objects[ai]
+            if name in ['lmc', 'smc']:
+                int_path = project_path + name + '/integrated_res_13pc/'
+            else:
+                int_path = project_path + name + '/integrated_res_167pc/'
+            i, j = ai // 2, ai % 2
+            # Read .csv file for best fit parameters, sed
+            fn = int_path + name + '_integrated.csv'
+            df = pd.read_csv(fn)
+            Sigmad_exp = df['dust.surface.density'][0]
+            Td_exp = df['dust.temperature'][0]
+            sed = np.empty(nwl)
+            sed_vec = sed.reshape(1, nwl)
+            for bi in range(nwl):
+                sed[bi] = df[bands[bi]][0]
+            # Read bkgcov and cali_mat2
+            fns = os.listdir(int_path)
+            for fn in fns:
+                temp = fn.split('_')
+                if len(temp) > 1:
+                    if temp[1] == 'dust.surface.density.rlcube':
+                        fn_Sigmad = int_path + fn
+                    elif temp[1] == 'dust.temperature.rlcube':
+                        fn_Td = int_path + fn
+            #
+            all_instr = ['pacs', 'spire', 'mips']
+            band_instr = {'pacs70': 'pacs', 'pacs100': 'pacs',
+                          'pacs160': 'pacs', 'spire250': 'spire',
+                          'spire350': 'spire', 'spire500': 'spire',
+                          'mips24': 'mips', 'mips70': 'mips',
+                          'mips160': 'mips'}
+            cau = {'pacs': 10.0 / 100.0, 'spire': 8.0 / 100.0,
+                   'mips': 2.0 / 100.0}
+            cru = {'pacs70': 2.0 / 100, 'pacs100': 2.0 / 100,
+                   'pacs160': 2.0 / 100, 'spire250': 1.5 / 100,
+                   'spire350': 1.5 / 100, 'spire500': 1.5 / 100,
+                   'mips24': 4.0 / 100, 'mips70': 7.0 / 100,
+                   'mips160': 12.0 / 100}
+            cali_mat2 = np.zeros([nwl, nwl])
+            for instr in all_instr:
+                instr_bands = [bi for bi in range(nwl) if
+                               band_instr[bands[bi]] == instr]
+                for bi in instr_bands:
+                    cali_mat2[bi, bi] += cru[bands[bi]]
+                    for bj in instr_bands:
+                        cali_mat2[bi, bj] += cau[instr]
+            cali_mat2 = cali_mat2**2
+            #
+            calcov = sed_vec.T * cali_mat2 * sed_vec
+            cov_n1 = np.linalg.inv(calcov)
+            unc = np.sqrt(np.linalg.inv(cov_n1).diagonal())
+            print(name, unc)
+            # Read random selection
+            Sigmads = fits.getdata(fn_Sigmad).flatten()
+            Tds = fits.getdata(fn_Td).flatten()
+            # Build (and save) complete models, RSRF, calculate chi^2
+            mn = len(Sigmads)
+            pr = np.empty(mn)
+            models_complete = []
+            for mi in range(mn):
+                temp = SEMBB(wl_complete, Sigmads[mi], Tds[mi],
+                             float(beta_f), kappa160=kappa160)
+                models_complete.append([t for t in temp])
+                model_short = z0mg_RSRF(wl_complete, temp,
+                                        ['PACS_100', 'PACS_160', 'SPIRE_250',
+                                         'SPIRE_350', 'SPIRE_500'])
+                diff = model_short - sed
+                shape0 = list(diff.shape)[:-1]
+                shape1 = shape0 + [1, nwl]
+                shape2 = shape0 + [nwl, 1]
+                chi2 = np.matmul(np.matmul(diff.reshape(shape1), cov_n1),
+                                 diff.reshape(shape2)).reshape(shape0)
+                pr[mi] = np.exp(-0.5 * chi2)
+            pr = pr / np.max(pr)
+            # Best fit model
+            model_exp = SEMBB(wl_complete, Sigmad_exp, Td_exp, float(beta_f),
+                              kappa160=kappa160)
+            raw_exp = SEMBB(wl, Sigmad_exp, Td_exp, float(beta_f),
+                            kappa160=kappa160)
+            rsrf_exp = z0mg_RSRF(wl_complete, model_exp,
+                                 ['PACS_100', 'PACS_160', 'SPIRE_250',
+                                  'SPIRE_350', 'SPIRE_500'])
+            print(name, 'ccf:', rsrf_exp / raw_exp)
+            model_exp = SEMBB(wl_complete, Sigmad_exp, Td_exp, float(beta_f),
+                              kappa160=kappa160)
+            #
+            # Plotting
+            #
+            for mi in range(mn):
+                ax[i, j].plot(wl_complete, models_complete[mi],
+                              alpha=pr[mi], color='gray')
+            # Plot EXP and MAX
+            ax[i, j].plot(wl_complete, model_exp, linewidth=3, label='EXP',
+                          color='orange')
+            ax[i, j].plot(wl_complete, models_complete[np.argmax(pr)],
+                          linewidth=3, label='MAX', color='g')
+            # Plot observation
+            ax[i, j].errorbar(wl, sed, yerr=unc, fmt='o', color='red',
+                              capsize=10, label='Herschel data')
+            ax[i, j].legend()
+            ax[i, j].set_xlabel(r'$\lambda$ [$\mu m$]')
+            ax[i, j].set_ylabel(r'$F_\nu$ [$MJy$ $sr^{-1}$]')
+            ax[i, j].set_title(name, x=0.05, y=0.9, ha='left')
+            #
+        fn = project_path + 'integrated/models'
+        if self.TRUE_FOR_PNG:
+            fig.savefig(fn + '.png', bbox_inches='tight')
+        else:
+            with PdfPages(fn + '.pdf') as pp:
+                pp.savefig(fig, bbox_inches='tight')
+        plt.close('all')
+        print(' -- Plots saved. All figures closing.')
+
+    def integrated_model_FBPL(self, project_path='Projects/UTOMO18/'):
+        plt.close('all')
+        beta_f = '1.8'
+        bands = ['pacs100', 'pacs160', 'spire250', 'spire350', 'spire500']
+        wl = np.array([100, 160, 250, 350, 500])
+        nwl = len(bands)
+        objects = ['smc', 'lmc', 'm31', 'm33']
+        objects_c = ['SMC', 'LMC', 'M31', 'M33']
+        wl_complete = np.linspace(1, 800, 1000)
+        #
+        if beta_f == '2.0':
+            fn = 'hdf5_MBBDust/Calibration.h5'
+        else:
+            fn = 'hdf5_MBBDust/Calibration_' + beta_f + '.h5'
+        with h5py.File(fn, 'r') as hf:
+            grp = hf['FB']
+            kappa160 = grp['kappa160'].value
+            grp = hf['PL']
+            kappa160PL = grp['kappa160'].value
+        #
+        fig, ax = plt.subplots(2, 2, figsize=(10, 8))
+        for ai in range(4):
+            name = objects[ai]
+            name_c = objects_c[ai]
+            if name in ['lmc', 'smc']:
+                int_path = project_path + name + '/integrated_res_13pc/'
+                int_pathPL = project_path + name + '_PL/integrated_res_13pc/'
+            else:
+                int_path = project_path + name + '/integrated_res_167pc/'
+                int_pathPL = project_path + name + '_PL/integrated_res_167pc/'
+            i, j = ai // 2, ai % 2
+            # Read .csv file for best fit parameters, sed
+            fn = int_path + name + '_integrated.csv'
+            df = pd.read_csv(fn)
+            sed = np.empty(nwl)
+            sed_vec = sed.reshape(1, nwl)
+            for bi in range(nwl):
+                sed[bi] = df[bands[bi]][0]
+            Sigmad_exp = df['dust.surface.density'][0]
+            Td_exp = df['dust.temperature'][0]
+            # PL
+            fn = int_pathPL + name + '_integrated.csv'
+            df = pd.read_csv(fn)
+            Sigmad_expPL = df['dust.surface.density'][0]
+            alpha_expPL = df['alpha'][0]
+            gamma_expPL = df['gamma'][0]
+            logUmin_expPL = df['logUmin'][0]
+            # Read realize cube
+            fns = os.listdir(int_path)  # FB
+            for fn in fns:
+                temp = fn.split('_')
+                if len(temp) > 1:
+                    if temp[1] == 'dust.surface.density.rlcube':
+                        fn_Sigmad = int_path + fn
+                    elif temp[1] == 'dust.temperature.rlcube':
+                        fn_Td = int_path + fn
+            fns = os.listdir(int_pathPL)  # PL
+            for fn in fns:
+                temp = fn.split('_')
+                if len(temp) > 1:
+                    if temp[1] == 'dust.surface.density.rlcube':
+                        fn_SigmadPL = int_pathPL + fn
+                    elif temp[1] == 'alpha.rlcube':
+                        fn_alphaPL = int_pathPL + fn
+                    elif temp[1] == 'gamma.rlcube':
+                        fn_gammaPL = int_pathPL + fn
+                    elif temp[1] == 'logUmin.rlcube':
+                        fn_logUminPL = int_pathPL + fn
+            #
+            all_instr = ['pacs', 'spire', 'mips']
+            band_instr = {'pacs70': 'pacs', 'pacs100': 'pacs',
+                          'pacs160': 'pacs', 'spire250': 'spire',
+                          'spire350': 'spire', 'spire500': 'spire',
+                          'mips24': 'mips', 'mips70': 'mips',
+                          'mips160': 'mips'}
+            cau = {'pacs': 10.0 / 100.0, 'spire': 8.0 / 100.0,
+                   'mips': 2.0 / 100.0}
+            cru = {'pacs70': 2.0 / 100, 'pacs100': 2.0 / 100,
+                   'pacs160': 2.0 / 100, 'spire250': 1.5 / 100,
+                   'spire350': 1.5 / 100, 'spire500': 1.5 / 100,
+                   'mips24': 4.0 / 100, 'mips70': 7.0 / 100,
+                   'mips160': 12.0 / 100}
+            cali_mat2 = np.zeros([nwl, nwl])
+            for instr in all_instr:
+                instr_bands = [bi for bi in range(nwl) if
+                               band_instr[bands[bi]] == instr]
+                for bi in instr_bands:
+                    cali_mat2[bi, bi] += cru[bands[bi]]
+                    for bj in instr_bands:
+                        cali_mat2[bi, bj] += cau[instr]
+            cali_mat2 = cali_mat2**2
+            #
+            calcov = sed_vec.T * cali_mat2 * sed_vec
+            cov_n1 = np.linalg.inv(calcov)
+            unc = np.sqrt(np.linalg.inv(cov_n1).diagonal())
+            print(name, unc)
+            #
+            # FB
+            #
+            # Read random selection
+            num = 100
+            Sigmads = fits.getdata(fn_Sigmad).flatten()[:num]
+            Tds = fits.getdata(fn_Td).flatten()[:num]
+            # Build (and save) complete models, RSRF, calculate chi^2
+            mn = len(Sigmads)
+            pr = np.empty(mn)
+            models_complete = []
+            for mi in range(mn):
+                temp = SEMBB(wl_complete, Sigmads[mi], Tds[mi],
+                             float(beta_f), kappa160=kappa160)
+                models_complete.append([t for t in temp])
+                model_short = z0mg_RSRF(wl_complete, temp,
+                                        ['PACS_100', 'PACS_160', 'SPIRE_250',
+                                         'SPIRE_350', 'SPIRE_500'])
+                diff = model_short - sed
+                shape0 = list(diff.shape)[:-1]
+                shape1 = shape0 + [1, nwl]
+                shape2 = shape0 + [nwl, 1]
+                chi2 = np.matmul(np.matmul(diff.reshape(shape1), cov_n1),
+                                 diff.reshape(shape2)).reshape(shape0)
+                pr[mi] = np.exp(-0.5 * chi2)
+            pr = pr / np.max(pr) * 0.15
+            #
+            # PL
+            #
+            # Read random selection
+            Sigmads = fits.getdata(fn_SigmadPL).flatten()[:num]
+            alphas = fits.getdata(fn_alphaPL).flatten()[:num]
+            gammas = fits.getdata(fn_gammaPL).flatten()[:num]
+            logUmins = fits.getdata(fn_logUminPL).flatten()[:num]
+            # Build (and save) complete models, RSRF, calculate chi^2
+            mn = len(Sigmads)
+            prPL = np.empty(mn)
+            models_completePL = []
+            for mi in range(mn):
+                temp = PowerLaw(wl_complete, Sigmads[mi], alphas[mi],
+                                gammas[mi], logUmins[mi], kappa160=kappa160PL)
+                models_completePL.append([t for t in temp])
+                model_short = z0mg_RSRF(wl_complete, temp,
+                                        ['PACS_100', 'PACS_160', 'SPIRE_250',
+                                         'SPIRE_350', 'SPIRE_500'])
+                diff = model_short - sed
+                shape0 = list(diff.shape)[:-1]
+                shape1 = shape0 + [1, nwl]
+                shape2 = shape0 + [nwl, 1]
+                chi2 = np.matmul(np.matmul(diff.reshape(shape1), cov_n1),
+                                 diff.reshape(shape2)).reshape(shape0)
+                prPL[mi] = np.exp(-0.5 * chi2)
+            prPL = prPL / np.max(prPL) * 0.15
+            #
+            # Plotting FB + PL
+            #
+            models_complete = np.array(models_complete)
+            models_completePL = np.array(models_completePL)
+            """
+            for mi in range(mn):
+                ax[i, j].plot(wl_complete, models_complete[mi],
+                              alpha=0.05, color='green')
+                ax[i, j].plot(wl_complete, models_completePL[mi],
+                              alpha=0.05, color='blue')
+            """
+            ax[i, j].fill_between(wl_complete,
+                                  np.max(models_complete, axis=0),
+                                  np.min(models_complete, axis=0),
+                                  color='#1b9e77', alpha=0.3)
+            ax[i, j].fill_between(wl_complete,
+                                  np.max(models_completePL, axis=0),
+                                  np.min(models_completePL, axis=0),
+                                  color='#7570b3', alpha=0.3)
+            """
+            # Plot max and legend
+            ax[i, j].plot(wl_complete, models_complete[np.argmax(pr)],
+                          color='green', label='FB')
+            ax[i, j].plot(wl_complete, models_completePL[np.argmax(pr)],
+                          color='blue', label='PL')
+            """
+            # Plot exp and legend
+            model_exp = SEMBB(wl_complete, Sigmad_exp, Td_exp, float(beta_f),
+                              kappa160=kappa160)
+            ax[i, j].plot(wl_complete, model_exp,
+                          color='#1b9e77', label='Single-temperature')
+            model_expPL = PowerLaw(wl_complete, Sigmad_expPL, alpha_expPL,
+                                   gamma_expPL, logUmin_expPL,
+                                   kappa160=kappa160PL)
+            ax[i, j].plot(wl_complete, model_expPL, linestyle='--',
+                          color='#7570b3', label='Multi-temperature')
+            # Plot observation
+            ax[i, j].errorbar(wl, sed, yerr=unc, fmt='o', color='#d95f02',
+                              capsize=10, label='Herschel data')
+            ax[i, j].legend()
+            ax[i, j].set_xlabel(r'$\lambda$ [$\mu m$]')
+            ax[i, j].set_ylabel(r'$I_\nu$ [$MJy$ $sr^{-1}$]')
+            ax[i, j].set_title(name_c, x=0.05, y=0.9, ha='left')
+            ax[i, j].grid(linestyle='--')
+            #
+        fn = project_path + 'integrated/models'
+        if self.TRUE_FOR_PNG:
+            fig.savefig(fn + '.png', bbox_inches='tight')
+        else:
+            with PdfPages(fn + '.pdf') as pp:
+                pp.savefig(fig, bbox_inches='tight')
+        plt.close('all')
+        print(' -- Plots saved. All figures closing.')
