@@ -4,7 +4,9 @@ if False:
     SDM_name, ms_active, flagdata = 0
 
 idchiang_manual_flags = \
-    {'14B-396.sb29939521.eb29987204.56975.4131616088':  # NGC1961 01
+    {'14B-396.sb29809142.eb30014592.56987.35765355324':  # IC342 01
+     ["mode='manual' antenna='ea18'"],
+     '14B-396.sb29939521.eb29987204.56975.4131616088':  # NGC1961 01
      ["mode='manual' antenna='ea02'"],
      '14B-396.sb29939521.eb29989968.56978.41638283565':  # NGC1961 02
      ["mode='manual' antenna='ea02,ea28'"],
