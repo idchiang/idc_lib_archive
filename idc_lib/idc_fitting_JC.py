@@ -12,11 +12,10 @@ from astropy.io import fits
 # from astropy.coordinates import Angle
 from astropy.constants import c, N_A
 # from corner import corner
-from sklearn.linear_model import LinearRegression
+# from sklearn.linear_model import LinearRegression
 # from .idc_voronoi import voronoi_m
 from .idc_functions import SEMBB, BEMBB, WD, PowerLaw, B_fast
 from .idc_functions import best_fit_and_error, normalize_pdf, save_fits_gz
-from .idc_fitting_old import kappa_calibration as kc_old
 from .z0mg_RSRF import z0mg_RSRF
 plt.ioff()
 
@@ -53,7 +52,7 @@ grid_para = {'dust.surface.density': [-4.,  1., 0.025],
 grid_para = {'dust.surface.density': [-4.,  1., 0.025],
              'dust.temperature': [5., 50., 0.5],
              'beta': [-1.0, 4.0, 0.1],
-             'beta2': [-1.0, 4.0, 0.25],
+             'beta2': [-1.0, 4.0, 0.1],
              'warm.dust.fraction': [0.0, 0.05, 0.002],
              'alpha': [1.1, 5.1, 0.2],  # Remember to avoid alpha==1
              'gamma': [-3, 0, 0.2],
@@ -98,7 +97,7 @@ FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15,
         'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04,
         'HERACLES': 13}
 
-
+"""
 def diskmask_UTOMO18(name, ress,
                      bands=['pacs100', 'pacs160', 'spire250', 'spire350',
                             'spire500'],
@@ -114,15 +113,16 @@ def diskmask_UTOMO18(name, ress,
                 if len(temp) < 4:
                     continue
                 elif temp[-4] == band:
-                    if temp[-1] == 'mask.fits':
+                    if temp[-1] == 'mask.bigger.fits':
                         temp, hdr = fits.getdata(respath + fn, header=True)
                         masks.append(temp.astype(bool))
         assert len(masks) == len(bands)
         diskmask = np.all(masks, axis=0)
-        fn = respath + name + '_diskmask.fits'
+        fn = respath + name + '_diskmask.bigger.fits'
         fits.writeto(fn, diskmask.astype(int), hdr, overwrite=True)
+"""
 
-
+"""
 def bkgcov_UTOMO18(name, res_good, res_all,
                    bands=['pacs100', 'pacs160', 'spire250', 'spire350',
                           'spire500'],
@@ -277,6 +277,7 @@ def bkgcov_UTOMO18(name, res_good, res_all,
     fig.tight_layout()
     fig.savefig('output/' + name + '.png')
     plt.close('all')
+"""
 
 
 def fit_dust_density(name, beta_f, bands,
@@ -286,21 +287,21 @@ def fit_dust_density(name, beta_f, bands,
                      observe_fns=[], mask_fn='', subdir=None,
                      notes='', galactic_integrated=False,
                      better_bkgcov=None, res_arcsec=None,
-                     import_beta=False, beta_in=None, input_avg_SED=False,
+                     beta_in=None, input_avg_SED=False,
                      avg_SED=[]):
     assert len(observe_fns) == len(bands)
     randcubesize = 100
     #
     nwl = len(bands)
-    diskmask, hdr = fits.getdata(mask_fn, header=True)
-    diskmask = diskmask.astype(bool)
-    list_shape = list(diskmask.shape)
+    bkgmask, hdr = fits.getdata(mask_fn, header=True)
+    bkgmask = bkgmask.astype(bool)
+    list_shape = list(bkgmask.shape)
     sed = np.empty(list_shape + [nwl])
     for i in range(nwl):
         sed[:, :, i] = fits.getdata(observe_fns[i], header=False)
     non_nanmask = np.all(np.isfinite(sed), axis=-1)
-    diskmask = diskmask * non_nanmask
-    bkgmask = (~diskmask) * non_nanmask
+    diskmask = (~bkgmask) * non_nanmask
+    bkgmask = bkgmask * non_nanmask
     # method_abbr: SE, FB, BE, WD, PL
     #
     # Reading wavelength #
@@ -319,39 +320,19 @@ def fit_dust_density(name, beta_f, bands,
     #
     # Reading calibration #
     #
-    if import_beta:
-        beta_in = np.round_(beta_in, 2)
-        beta_unique = np.unique(beta_in[diskmask])
-        assert len(beta_unique) < 100  # Please not too many...
-        kappa160s = {}
-        for b in beta_unique:
-            fn = 'hdf5_MBBDust/Calibration_' + str(round(b, 2)) + '.h5'
-            try:
-                with h5py.File(fn, 'r') as hf:
-                    grp = hf[method_abbr]
-                    kappa160s[b] = grp['kappa160'][()]
-            except (KeyError, NameError, OSError):
-                print('This method is not calibrated yet!!',
-                      'Starting calibration...')
-                kc_old(method_abbr, beta_f=b, lambdac_f=lambdac_f,
-                       nop=nop)
-                with h5py.File(fn, 'r') as hf:
-                    grp = hf[method_abbr]
-                    kappa160s[b] = grp['kappa160'][()]
-    else:
-        fn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 2)) + '.h5'
-        try:
-            with h5py.File(fn, 'r') as hf:
-                grp = hf[method_abbr]
-                kappa160 = grp['kappa160'][()]
-        except (KeyError, NameError, OSError):
-            print('This method is not calibrated yet!!',
-                  'Starting calibration...')
-            kappa_calibration(method_abbr, beta_f=beta_f, lambdac_f=lambdac_f,
-                              nop=nop)
-            with h5py.File(fn, 'r') as hf:
-                grp = hf[method_abbr]
-                kappa160 = grp['kappa160'][()]
+    fn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 2)) + '.h5'
+    try:
+        with h5py.File(fn, 'r') as hf:
+            grp = hf[method_abbr]
+            kappa160 = grp['kappa160'].value
+    except (KeyError, NameError, OSError):
+        print('This method is not calibrated yet!!',
+              'Starting calibration...')
+        kappa_calibration(method_abbr, beta_f=beta_f, lambdac_f=lambdac_f,
+                          nop=nop)
+        with h5py.File(fn, 'r') as hf:
+            grp = hf[method_abbr]
+            kappa160 = grp['kappa160'].value
     #
     """ Read HERSCHEL SED and diskmask """
     #
@@ -365,6 +346,7 @@ def fit_dust_density(name, beta_f, bands,
     # kappa_lambda in cm^2 / g
     # SED in MJy / sr
     if better_bkgcov is None:
+        """
         # implement outlier rejection
         outliermask = np.zeros_like(bkgmask, dtype=bool)
         for i in range(nwl):
@@ -374,8 +356,9 @@ def fit_dust_density(name, beta_f, bands,
                 outliermask += AD > 3 * MAD
         bkgmask = bkgmask * (~outliermask)
         new_bkgmask = bkgmask * (~outliermask)
+        """
         # assert np.sum(bkgmask) > 10
-        bkgcov = np.cov(sed[new_bkgmask].T)
+        bkgcov = np.cov(sed[bkgmask].T)
     else:
         bkgcov = better_bkgcov
     #
@@ -424,74 +407,37 @@ def fit_dust_density(name, beta_f, bands,
     #
     """ Build or load SED models """
     # Should be a for loop or something like that here
-    if import_beta:
-        modelss = {}
-        for be in beta_unique:
-            models = []
-            if del_model:
-                for b in bands:
-                    fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
-                        str(round(be, 2)) + '.fits.gz'
-                    if os.path.isfile(fn):
-                        os.remove(fn)
-            for b in bands:
-                fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
-                    str(round(be, 2)) + '.fits.gz'
-                if not os.path.isfile(fn):
-                    if method_abbr in ['SE']:
-                        filelist = os.listdir('models')
-                        new_fn = ''
-                        for f in filelist:
-                            temp = f.split('_')
-                            if len(temp) > 1:
-                                if (temp[0] == b) and \
-                                        (temp[1][:2] == method_abbr):
-                                    new_fn = f
-                                    break
-                        if new_fn == '':
-                            models_creation(method_abbr, be, lambdac_f,
-                                            band_instr[b], kappa160s[be], nop)
-                        else:
-                            fn = new_fn
-                    else:
-                        models_creation(method_abbr, be, lambdac_f,
-                                        band_instr[b], kappa160s[be], nop)
-                models.append(fits.getdata(fn))
-            models = np.array(models)
-            models = np.moveaxis(models, 0, -1)
-            modelss[be] = models
-    else:
-        models = []
-        if del_model:
-            for b in bands:
-                fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
-                    str(round(beta_f, 2)) + '.fits.gz'
-                if os.path.isfile(fn):
-                    os.remove(fn)
+    models = []
+    if del_model:
         for b in bands:
             fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
                 str(round(beta_f, 2)) + '.fits.gz'
-            if not os.path.isfile(fn):
-                if method_abbr in ['SE']:
-                    filelist = os.listdir('models')
-                    new_fn = ''
-                    for f in filelist:
-                        temp = f.split('_')
-                        if len(temp) > 1:
-                            if (temp[0] == b) and (temp[1][:2] == method_abbr):
-                                new_fn = f
-                                break
-                    if new_fn == '':
-                        models_creation(method_abbr, beta_f, lambdac_f,
-                                        band_instr[b], kappa160, nop)
-                    else:
-                        fn = new_fn
-                else:
+            if os.path.isfile(fn):
+                os.remove(fn)
+    for b in bands:
+        fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
+            str(round(beta_f, 2)) + '.fits.gz'
+        if not os.path.isfile(fn):
+            if method_abbr in ['SE']:
+                filelist = os.listdir('models')
+                new_fn = ''
+                for f in filelist:
+                    temp = f.split('_')
+                    if len(temp) > 1:
+                        if (temp[0] == b) and (temp[1][:2] == method_abbr):
+                            new_fn = f
+                            break
+                if new_fn == '':
                     models_creation(method_abbr, beta_f, lambdac_f,
                                     band_instr[b], kappa160, nop)
-            models.append(fits.getdata(fn))
-        models = np.array(models)
-        models = np.moveaxis(models, 0, -1)
+                else:
+                    fn = new_fn
+            else:
+                models_creation(method_abbr, beta_f, lambdac_f,
+                                band_instr[b], kappa160, nop)
+        models.append(fits.getdata(fn))
+    models = np.array(models)
+    models = np.moveaxis(models, 0, -1)
     #
     """ Real fitting starts """
     #
@@ -565,10 +511,7 @@ def fit_dust_density(name, beta_f, bands,
             #
             """ Calculate chi^2 values """
             #
-            if import_beta:
-                diff = modelss[beta_in[i, j]] - sed[i, j]
-            else:
-                diff = models - sed[i, j]
+            diff = models - sed[i, j]
             shape0 = list(diff.shape)[:-1]
             shape1 = shape0 + [1, nwl]
             shape2 = shape0 + [nwl, 1]
@@ -629,44 +572,22 @@ def fit_dust_density(name, beta_f, bands,
             #
             """ Recover SED from best fit. Save SED and chi^2 values """
             #
-            if import_beta:
-                if method_abbr == 'SE':
-                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], _vars[2][0],
-                                    kappa160=kappa160s[beta_in[i, j]])
-                elif method_abbr == 'FB':
-                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0],
-                                    beta_in[i, j],
-                                    kappa160=kappa160s[beta_in[i, j]])
-                elif method_abbr == 'BE':
-                    rec_sed = BEMBB(wl, _vars[0][0], _vars[1][0],
-                                    beta_in[i, j], lambdac_f, _vars[2][0],
-                                    kappa160=kappa160s[beta_in[i, j]])
-                elif method_abbr == 'WD':
-                    rec_sed = WD(wl, _vars[0][0], _vars[1][0], beta_in[i, j],
-                                 _vars[2][0],
-                                 kappa160=kappa160s[beta_in[i, j]])
-                elif method_abbr == 'PL':
-                    rec_sed = PowerLaw(wl, _vars[0][0], _vars[1][0],
-                                       _vars[2][0], _vars[3][0],
-                                       beta=beta_in[i, j],
-                                       kappa160=kappa160s[beta_in[i, j]])
-            else:
-                if method_abbr == 'SE':
-                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], _vars[2][0],
-                                    kappa160=kappa160)
-                elif method_abbr == 'FB':
-                    rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
-                                    kappa160=kappa160)
-                elif method_abbr == 'BE':
-                    rec_sed = BEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
-                                    lambdac_f, _vars[2][0], kappa160=kappa160)
-                elif method_abbr == 'WD':
-                    rec_sed = WD(wl, _vars[0][0], _vars[1][0], beta_f,
-                                 _vars[2][0], kappa160=kappa160)
-                elif method_abbr == 'PL':
-                    rec_sed = PowerLaw(wl, _vars[0][0], _vars[1][0],
-                                       _vars[2][0], _vars[3][0], beta=beta_f,
-                                       kappa160=kappa160)
+            if method_abbr == 'SE':
+                rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], _vars[2][0],
+                                kappa160=kappa160)
+            elif method_abbr == 'FB':
+                rec_sed = SEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
+                                kappa160=kappa160)
+            elif method_abbr == 'BE':
+                rec_sed = BEMBB(wl, _vars[0][0], _vars[1][0], beta_f,
+                                lambdac_f, _vars[2][0], kappa160=kappa160)
+            elif method_abbr == 'WD':
+                rec_sed = WD(wl, _vars[0][0], _vars[1][0], beta_f,
+                             _vars[2][0], kappa160=kappa160)
+            elif method_abbr == 'PL':
+                rec_sed = PowerLaw(wl, _vars[0][0], _vars[1][0],
+                                   _vars[2][0], _vars[3][0], beta=beta_f,
+                                   kappa160=kappa160)
             mp_rec_sed[q] = rec_sed
             diff = rec_sed - sed[i, j]
             shape1 = [1, nwl]
@@ -1386,7 +1307,6 @@ def kappa_calibration(method_abbr, beta_f, lambdac_f=300.0,
                                  9.6 * np.pi)
         hf.close()
     #
-    del samples, labels
     """
     fig = corner(samples.T, labels=labels, quantities=(0.16, 0.84),
                  show_titles=True, title_kwargs={"fontsize": 12})

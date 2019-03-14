@@ -22,7 +22,7 @@ kpath = 'data/Kernels/'
 #
 
 
-def regrid_gas_maps(target='IC342', HI=True, CO=True,
+def regrid_gas_maps(target='IC342', HI=True, CO=False,
                     RES=['spire350', 'spire500']):
     #
     for bi in range(2):

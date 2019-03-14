@@ -6,7 +6,9 @@ os.system('clear')  # on linux / os x
 
 name = 'NGC5457'
 
-all_ = ['SE', 'FB', 'BE', 'WD', 'PL']
+# all_ = ['SE', 'FB', 'BE', 'WD', 'PL']
+all_ = ['BE']
+
 plots = Dust_Plots()
 for m in all_:
     plots.Load_Data(name, m)
@@ -18,8 +20,8 @@ for m in all_:
 # plots.example_model_merged(name)
 # plots.pdf_profiles_merge(name)
 # plots.temperature_profiles_merge(name)
-plots.temperature_profiles_talk(name)
-plots.pdf_profiles_talk(name)
+# plots.temperature_profiles_talk(name)
+# plots.pdf_profiles_talk(name)
 # plots.residual_map_merged()
 # plots.residual_chi2(name)
 
@@ -34,3 +36,6 @@ plots.pdf_profiles_talk(name)
 # for i in range(20):
 #     plots.realize_vs_simple_sum(rbin_num=i)
 # plots.realize_vs_Mgas_PDF2()
+
+# plots.D14_pdf_profiles_DUS19(name, 'BE')
+plots.C18_datatable_DUS19()

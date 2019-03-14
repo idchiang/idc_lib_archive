@@ -55,7 +55,7 @@ class Dust_Plots(object):
             self.d['kappa160'] = {}
         with File('hdf5_MBBDust/Calibration.h5', 'r') as hf:
             grp = hf[method_abbr]
-            self.d['kappa160'][method_abbr] = grp['kappa160'].value
+            self.d['kappa160'][method_abbr] = grp['kappa160'][()]
         try:
             self.d[name]
             if self.fake:
@@ -63,16 +63,16 @@ class Dust_Plots(object):
                     grp1 = hf['Fake']
                     grp2 = grp1['Bin']
                     grp = grp2[method_abbr]
-                    self.d[name]['binlist'] = grp['BINLIST'].value
-                    self.d[name]['binmap'] = grp['BINMAP'].value
-                    self.d[name]['aGas'] = grp['GAS_AVG'].value
+                    self.d[name]['binlist'] = grp['BINLIST'][()]
+                    self.d[name]['binmap'] = grp['BINMAP'][()]
+                    self.d[name]['aGas'] = grp['GAS_AVG'][()]
                     self.d[name]['SigmaGas'] = \
                         list2bin(self.d[name]['aGas'], self.d[name]['binlist'],
                                  self.d[name]['binmap'])
-                    self.d[name]['aSED'] = grp['Herschel_SED'].value
-                    self.d[name]['aRadius'] = grp['Radius_avg'].value
+                    self.d[name]['aSED'] = grp['Herschel_SED'][()]
+                    self.d[name]['aRadius'] = grp['Radius_avg'][()]
                     self.d[name]['acov_n1'] = \
-                        grp['Herschel_covariance_matrix'].value
+                        grp['Herschel_covariance_matrix'][()]
         except KeyError:
             cd = {}
             with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
@@ -81,24 +81,24 @@ class Dust_Plots(object):
                     grp1 = hf['Fake']
                     grp2 = grp1['Bin']
                     grp = grp2[method_abbr]
-                cd['binlist'] = grp['BINLIST'].value
-                cd['binmap'] = grp['BINMAP'].value
-                cd['aGas'] = grp['GAS_AVG'].value
+                cd['binlist'] = grp['BINLIST'][()]
+                cd['binmap'] = grp['BINMAP'][()]
+                cd['aGas'] = grp['GAS_AVG'][()]
                 cd['SigmaGas'] = \
                     list2bin(cd['aGas'], cd['binlist'], cd['binmap'])
-                cd['aSED'] = grp['Herschel_SED'].value
-                cd['aRadius'] = grp['Radius_avg'].value
-                cd['acov_n1'] = grp['Herschel_covariance_matrix'].value
+                cd['aSED'] = grp['Herschel_SED'][()]
+                cd['aRadius'] = grp['Radius_avg'][()]
+                cd['acov_n1'] = grp['Herschel_covariance_matrix'][()]
                 #
                 grp = hf['Regrid']
-                cd['R25'] = grp['R25_KPC'].value
+                cd['R25'] = grp['R25_KPC'][()]
                 cd['aRadius'] /= cd['R25']
                 cd['Radius'] = \
                     list2bin(cd['aRadius'], cd['binlist'], cd['binmap'])
                 cd['SFR'] = \
-                    map2bin(grp['SFR'].value, cd['binlist'], cd['binmap'])
+                    map2bin(grp['SFR'][()], cd['binlist'], cd['binmap'])
                 cd['SMSD'] = \
-                    map2bin(grp['SMSD'].value, cd['binlist'], cd['binmap'])
+                    map2bin(grp['SMSD'][()], cd['binlist'], cd['binmap'])
             filename = 'data/PROCESSED/' + name + '/SPIRE_500_CRP.fits'
             data, hdr = fits.getdata(filename, 0, header=True)
             cd['WCS'] = WCS(hdr, naxis=2)
@@ -113,8 +113,8 @@ class Dust_Plots(object):
                 grp = grp1.require_group('Fitting_results')
                 cd['aSED'] = self.d[name]['aSED']
             subgrp = grp[method_abbr]
-            cd['alogSigmaD'] = subgrp['Dust_surface_density_log'].value
-            cd['aSigmaD_err'] = subgrp['Dust_surface_density_err_dex'].value
+            cd['alogSigmaD'] = subgrp['Dust_surface_density_log'][()]
+            cd['aSigmaD_err'] = subgrp['Dust_surface_density_err_dex'][()]
             cd['diskmask'] = list2bin(~np.isnan(cd['aSigmaD_err']),
                                       self.d[name]['binlist'],
                                       self.d[name]['binmap'])
@@ -122,31 +122,31 @@ class Dust_Plots(object):
                 list2bin(cd['alogSigmaD'], self.d[name]['binlist'],
                          self.d[name]['binmap'])
             cd['SigmaD_err'] = \
-                list2bin(subgrp['Dust_surface_density_err_dex'].value,
+                list2bin(subgrp['Dust_surface_density_err_dex'][()],
                          self.d[name]['binlist'], self.d[name]['binmap'])
             if method_abbr not in ['PL']:
-                cd['aT'] = subgrp['Dust_temperature'].value
+                cd['aT'] = subgrp['Dust_temperature'][()]
                 cd['T'] = list2bin(cd['aT'], self.d[name]['binlist'],
                                    self.d[name]['binmap'])
-                cd['aT_err'] = subgrp['Dust_temperature'].value
+                cd['aT_err'] = subgrp['Dust_temperature'][()]
                 cd['T_err'] = \
                     list2bin(cd['aT_err'], self.d[name]['binlist'],
                              self.d[name]['binmap'])
-                cd['aBeta'] = subgrp['beta'].value
+                cd['aBeta'] = subgrp['beta'][()]
                 cd['Beta'] = \
                     list2bin(cd['aBeta'], self.d[name]['binlist'],
                              self.d[name]['binmap'])
-                cd['aBeta_err'] = subgrp['beta_err'].value
+                cd['aBeta_err'] = subgrp['beta_err'][()]
                 cd['Beta_err'] = \
-                    list2bin(subgrp['beta_err'].value, self.d[name]['binlist'],
+                    list2bin(subgrp['beta_err'][()], self.d[name]['binlist'],
                              self.d[name]['binmap'])
-            cd['archi2'] = subgrp['Chi2'].value / (5.0 - num_para[method_abbr])
+            cd['archi2'] = subgrp['Chi2'][()] / (5.0 - num_para[method_abbr])
             cd['rchi2'] = \
                 list2bin(cd['archi2'], self.d[name]['binlist'],
                          self.d[name]['binmap'])
-            cd['aSED'] = subgrp['Best_fit_sed'].value
-            cd['aPDFs'] = subgrp['PDF'].value
-            self.SigmaDs = 10**subgrp['logsigmas'].value
+            cd['aSED'] = subgrp['Best_fit_sed'][()]
+            cd['aPDFs'] = subgrp['PDF'][()]
+            self.SigmaDs = 10**subgrp['logsigmas'][()]
             """
             logsigma_step = 0.025
             min_logsigma = -4.
@@ -155,73 +155,73 @@ class Dust_Plots(object):
                 10**np.arange(min_logsigma, max_logsigma, logsigma_step)
             """
             if method_abbr in ['SE', 'FB', 'BEMFB', 'PB', 'WD', 'BE']:
-                cd['aPDFs_T'] = subgrp['PDF_T'].value
-                self.Ts = subgrp['Ts'].value
+                cd['aPDFs_T'] = subgrp['PDF_T'][()]
+                self.Ts = subgrp['Ts'][()]
             elif method_abbr in ['FBPT']:
-                self.FBPT_Ts = subgrp['Ts'].value
+                self.FBPT_Ts = subgrp['Ts'][()]
             if method_abbr == 'SE':
-                self.betas = subgrp['betas'].value
+                self.betas = subgrp['betas'][()]
             if method_abbr in ['WD', 'PL']:
-                cd['aPDFs_T'] = subgrp['PDF_Teff'].value
-                cd['Teff_bins'] = subgrp['Teff_bins'].value
+                cd['aPDFs_T'] = subgrp['PDF_Teff'][()]
+                cd['Teff_bins'] = subgrp['Teff_bins'][()]
             if method_abbr in ['BEMFB', 'BE']:
-                cd['alambda_c'] = subgrp['Critical_wavelength'].value
+                cd['alambda_c'] = subgrp['Critical_wavelength'][()]
                 if len(cd['alambda_c'].shape) > 1:
                     cd['alambda_c'] = np.full(2176, 300.0)
                 cd['lambda_c'] = \
                     list2bin(cd['alambda_c'], self.d[name]['binlist'],
                              self.d[name]['binmap'])
                 cd['lambda_c_err'] = \
-                    list2bin(subgrp['Critical_wavelength_err'].value,
+                    list2bin(subgrp['Critical_wavelength_err'][()],
                              self.d[name]['binlist'], self.d[name]['binmap'])
                 if method_abbr == 'BEMFB':
-                    self.lambda_cs = subgrp['lambda_cs'].value
-                    cd['aPDFs_lc'] = subgrp['PDF_lc'].value
-                cd['abeta2'] = subgrp['beta2'].value
+                    self.lambda_cs = subgrp['lambda_cs'][()]
+                    cd['aPDFs_lc'] = subgrp['PDF_lc'][()]
+                cd['abeta2'] = subgrp['beta2'][()]
                 cd['beta2'] = \
                     list2bin(cd['abeta2'], self.d[name]['binlist'],
                              self.d[name]['binmap'])
                 cd['beta2_err'] = \
-                    list2bin(subgrp['beta2_err'].value,
+                    list2bin(subgrp['beta2_err'][()],
                              self.d[name]['binlist'], self.d[name]['binmap'])
-                self.beta2s = subgrp['beta2s'].value
-                cd['aPDFs_b2'] = subgrp['PDF_b2'].value
+                self.beta2s = subgrp['beta2s'][()]
+                cd['aPDFs_b2'] = subgrp['PDF_b2'][()]
             if method_abbr in ['WD']:
-                cd['aWDfrac'] = subgrp['WDfrac'].value
+                cd['aWDfrac'] = subgrp['WDfrac'][()]
                 cd['WDfrac'] = list2bin(cd['aWDfrac'], self.d[name]['binlist'],
                                         self.d[name]['binmap'])
-                cd['aWDfrac_err'] = subgrp['WDfrac_err'].value
+                cd['aWDfrac_err'] = subgrp['WDfrac_err'][()]
                 cd['WDfrac_err'] = \
                     list2bin(cd['aWDfrac_err'], self.d[name]['binlist'],
                              self.d[name]['binmap'])
-                self.WDfracs = subgrp['WDfracs'].value
-                cd['aPDFs_Wf'] = subgrp['PDF_Wf'].value
+                self.WDfracs = subgrp['WDfracs'][()]
+                cd['aPDFs_Wf'] = subgrp['PDF_Wf'][()]
             if method_abbr in ['PL']:
-                cd['aalpha'] = subgrp['alpha'].value
+                cd['aalpha'] = subgrp['alpha'][()]
                 cd['alpha'] = list2bin(cd['aalpha'], self.d[name]['binlist'],
                                        self.d[name]['binmap'])
-                cd['alpha_err'] = list2bin(subgrp['alpha_err'].value,
+                cd['alpha_err'] = list2bin(subgrp['alpha_err'][()],
                                            self.d[name]['binlist'],
                                            self.d[name]['binmap'])
-                self.alphas = subgrp['alphas'].value
-                cd['aloggamma'] = subgrp['loggamma'].value
+                self.alphas = subgrp['alphas'][()]
+                cd['aloggamma'] = subgrp['loggamma'][()]
                 cd['loggamma'] = list2bin(cd['aloggamma'],
                                           self.d[name]['binlist'],
                                           self.d[name]['binmap'])
-                cd['loggamma_err'] = list2bin(subgrp['loggamma_err'].value,
+                cd['loggamma_err'] = list2bin(subgrp['loggamma_err'][()],
                                               self.d[name]['binlist'],
                                               self.d[name]['binmap'])
-                self.gammas = 10**subgrp['loggammas'].value
-                cd['alogUmin'] = subgrp['logUmin'].value
+                self.gammas = 10**subgrp['loggammas'][()]
+                cd['alogUmin'] = subgrp['logUmin'][()]
                 cd['logUmin'] = list2bin(cd['alogUmin'],
                                          self.d[name]['binlist'],
                                          self.d[name]['binmap'])
-                cd['logUmin_err'] = list2bin(subgrp['logUmin_err'].value,
+                cd['logUmin_err'] = list2bin(subgrp['logUmin_err'][()],
                                              self.d[name]['binlist'],
                                              self.d[name]['binmap'])
-                self.logUmins = subgrp['logUmins'].value
+                self.logUmins = subgrp['logUmins'][()]
             if method_abbr in ['FBPT', 'PB']:
-                cd['coef_'] = subgrp['coef_'].value
+                cd['coef_'] = subgrp['coef_'][()]
         self.d[name][method_abbr] = cd
 
     def STBC(self, name, method_abbr, err_selc=0.3):
@@ -485,7 +485,6 @@ class Dust_Plots(object):
                 DTM_84 = np.append(DTM_84, 10**ssd[2])
             else:
                 n_zeromask[i] = False
-        print(DGR_LExp) 
         R25 = self.d[name]['R25']
         # first line: MO/MZ
         # second line: metallicity
@@ -546,7 +545,7 @@ class Dust_Plots(object):
         # H2 fraction
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            heracles = grp['HERACLES'].value
+            heracles = grp['HERACLES'][()]
         aH2 = np.array([np.nanmean(heracles[self.d[name]['binmap'] == bin_])
                         for bin_ in self.d[name]['binlist']])
         rH2, H2frac = self.simple_profile(aH2 / self.d[name]['aGas'],
@@ -787,6 +786,398 @@ class Dust_Plots(object):
         with PdfPages(fn) as pp:
             pp.savefig(fig, bbox_inches='tight')
 
+    def C18_datatable_DUS19(self, name='NGC5457', method_abbr='BE'): 
+        """
+        radial profiles for
+        0) radius
+        1) SFR (+unc?)
+        2) total gas (+unc)
+        3) H2 (+unc)
+        4) metallicity (+unc)
+        5) dust (+unc)
+        6) GD_dist
+        """
+        df = pd.DataFrame()
+        GD_dist = gal_data(name,
+                           galdata_dir='data/gal_data').field('DIST_MPC')[0]
+        binmap = self.d[name]['binmap']
+        binlist = self.d[name]['binlist']
+        aArea = np.array([np.sum(binmap == b) for b in binlist])
+        # 0) Radius
+        aRadius = self.d[name]['aRadius'] * self.d[name]['R25']
+        rbins = np.linspace(np.min(aRadius), np.max(aRadius), self.rbin)
+        rbins2 = (rbins[:-1] + rbins[1:]) / 2
+        df['RADIUS'] = rbins2
+        # 1) SFR: 10% unc
+        SFR = self.d[name]['SFR']
+        aSFR = np.array([SFR[binmap == b][0] for b in binlist])
+        SFRb2 = np.empty_like(rbins2)
+        for i in range(len(rbins2)):
+            mask = (rbins[i] <= aRadius) * (aRadius < rbins[i + 1])
+            SFRb2[i] = np.average(aSFR[mask], weights=aArea[mask])
+        df['SFR'] = SFRb2
+        # 2) Total gas: unc: 1 Msun / pc^2
+        aGas = self.d[name]['aGas']
+        Gasb2 = np.empty_like(rbins2)
+        for i in range(len(rbins2)):
+            mask = (rbins[i] <= aRadius) * (aRadius < rbins[i + 1])
+            Gasb2[i] = np.average(aGas[mask], weights=aArea[mask])
+        df['TOTAL_GAS'] = Gasb2
+        df['TOTAL_GAS_ERR'] = np.full_like(Gasb2, 1)
+        # 3) H2
+        with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
+            grp = hf['Regrid']
+            heracles = grp['HERACLES'][()]
+        # min_heracles = np.abs(np.nanmin(heracles))
+        # heracles[heracles < min_heracles] = np.nan 
+        aH2 = np.array([np.nanmean(heracles[binmap == b])
+                        for b in binlist])
+        H2b2 = np.empty_like(rbins2)
+        for i in range(len(rbins2)):
+            mask = (rbins[i] <= aRadius) * (aRadius < rbins[i + 1])
+            H2b2[i] = np.average(aH2[mask], weights=aArea[mask])
+        df['H2'] = H2b2
+        # 4) Metallicity + unc
+        ob2 = 8.715 - 0.027 * rbins2 * 7.4 / GD_dist
+        df['12+log(O/H)'] = ob2
+        oerr = 0.06 + \
+            (0.023 + (0.001 * rbins2 * 7.4 / GD_dist))
+        df['12+log(O/H)_err'] = oerr
+        # 5) dust + dust unc
+        dexpb2 = np.empty_like(rbins2)
+        d16b2 = np.empty_like(rbins2)
+        d84b2 = np.empty_like(rbins2)
+        for i in range(len(rbins2)):
+            mask = (rbins[i] <= aRadius) * (aRadius < rbins[i + 1])
+            Prob = self.d[name][method_abbr]['aPDFs'][mask]
+            s = Prob.shape
+            for j in range(s[0]):
+                Prob[j] *= aArea[j]
+            Prob = np.nansum(Prob, axis=0) / np.nansum(Prob)
+            #
+            dexpb2[i] = 10**np.nansum(np.log10(self.SigmaDs) * Prob)
+            csp = np.cumsum(Prob)
+            ssd = np.interp([0.16, 0.84], csp, np.log10(self.SigmaDs))
+            d16b2[i] = 10**ssd[0]
+            d84b2[i] = 10**ssd[1]
+        df['DUST'] = dexpb2
+        df['DUST_LOWER'] = d16b2
+        df['DUST_UPPER'] = d84b2
+        # 6) Save .csv and print GD_dist
+        df.to_csv('output/M101_C18_data.csv')
+        print('Distance in Mpc:', GD_dist)
+
+    def D14_pdf_profiles_DUS19(self, name, method_abbr):
+        """
+        DGR profile w/ linear regression
+        DGR data point spread
+        DTM vs metallicity
+        DGR vs. D14
+        DGR vs. R14
+        DGR vs. J09
+        """
+        plt.close('all')
+        # print(' --Plotting DGR/(O/H) profile...')
+        GD_dist = gal_data(name,
+                           galdata_dir='data/gal_data').field('DIST_MPC')[0]
+        r = d = w = dm = np.array([])  # radius, dgr, weight, DTM, gas
+        for i in range(len(self.d[name]['binlist'])):
+            temp_G = self.d[name]['aGas'][i]
+            temp_R = self.d[name]['aRadius'][i]
+            mask = self.d[name][method_abbr]['aPDFs'][i] > \
+                self.d[name][method_abbr]['aPDFs'][i].max() / 1000
+            temp_DGR = self.SigmaDs[mask] / temp_G
+            temp_P = self.d[name][method_abbr]['aPDFs'][i][mask]
+            temp_P = temp_P / np.sum(temp_P) * temp_G * \
+                (self.d[name]['binmap'] == self.d[name]['binlist'][i]).sum()
+            r = np.append(r, [temp_R] * len(temp_P))
+            m = 10**((8.715 - 0.027 * temp_R * self.d[name]['R25'] * 7.4 /
+                      GD_dist) - 12.0) * 16.0 / 1.008 / 0.51 / 1.36
+            d = np.append(d, temp_DGR)
+            dm = np.append(dm, temp_DGR / m)
+            w = np.append(w, temp_P)
+        nanmask = np.isnan(r + d + w)
+        r, d, w, dm = r[~nanmask], d[~nanmask], w[~nanmask], dm[~nanmask]
+        rbins = np.linspace(np.min(r), np.max(r), self.rbin)
+        dbins = \
+            np.logspace(np.log10(3E-5), np.log10(6E-2), self.dbin)
+        dmbins = \
+            np.logspace(np.min(np.log10(dm)), np.max(np.log10(dm)), self.dbin)
+        # Counting hist2d...
+        counts, _, _ = np.histogram2d(r, d, bins=(rbins, dbins), weights=w)
+        counts3, _, _ = np.histogram2d(r, dm, bins=(rbins, dmbins), weights=w)
+        del r, d, w, dm
+        counts, counts3 = counts.T, counts3.T
+        dbins2 = np.sqrt(dbins[:-1] * dbins[1:])
+        dmbins2 = (dmbins[:-1] + dmbins[1:]) / 2
+        rbins2 = (rbins[:-1] + rbins[1:]) / 2
+        DGR_Median = DGR_LExp = DGR_Max = DGR_16 = DGR_84 = np.array([])
+        DTM_LExp = DTM_16 = DTM_84 = np.array([])
+        n_zeromask = np.full(counts.shape[1], True, dtype=bool)
+        # need them now
+        df = pd.read_csv("data/Tables/Remy-Ruyer_2014.csv")
+        xbins2 = (8.715 - 0.027 * rbins2 * self.d[name]['R25'] * 7.4 / GD_dist)
+        #
+        for i in range(counts.shape[1]):
+            if np.sum(counts[:, i]) > 0:
+                counts[:, i] /= np.sum(counts[:, i])
+                counts3[:, i] /= np.sum(counts3[:, i])
+                csp = np.cumsum(counts[:, i])
+                csp = csp / csp[-1]
+                ssd = np.interp([0.16, 0.5, 0.84], csp, np.log10(dbins2))
+                DGR_Median = np.append(DGR_Median, 10**ssd[1])
+                DGR_LExp = np.append(DGR_LExp, 10**np.sum(np.log10(dbins2) *
+                                                          counts[:, i]))
+                DGR_Max = np.append(DGR_Max, dbins2[np.argmax(counts[:, i])])
+                DGR_16 = np.append(DGR_16, 10**ssd[0])
+                DGR_84 = np.append(DGR_84, 10**ssd[2])
+                #
+                csp = np.cumsum(counts3[:, i])
+                csp = csp / csp[-1]
+                ssd = np.interp([0.16, 0.5, 0.84], csp, np.log10(dmbins2))
+                DTM_LExp = np.append(DTM_LExp, 10**np.sum(np.log10(dmbins2) *
+                                                          counts3[:, i]))
+                DTM_16 = np.append(DTM_16, 10**ssd[0])
+                DTM_84 = np.append(DTM_84, 10**ssd[2])
+            else:
+                n_zeromask[i] = False
+        R25 = self.d[name]['R25']
+        # first line: MO/MZ
+        # second line: metallicity
+        DTM_unc_dex = 0.06 + \
+            (0.023 + (0.001 * rbins2 * R25 * 7.4 / GD_dist))
+        DGR_unc_dex = np.zeros_like(rbins2)
+        # third line: gas zero point uncertainty
+        radius_map = np.zeros_like(self.d[name]['binmap']) * np.nan
+        gas_map = np.zeros_like(self.d[name]['binmap']) * np.nan
+        for i in range(len(self.d[name]['binlist'])):
+            b_mask = self.d[name]['binmap'] == self.d[name]['binlist'][i]
+            radius_map[b_mask] = self.d[name]['aRadius'][i]
+            gas_map[b_mask] = self.d[name]['aGas'][i]
+        for i in range(len(DTM_unc_dex)):
+            u_mask = (rbins[i] <= radius_map) * (rbins[i + 1] >= radius_map)
+            temp_gas = np.nanmean(gas_map[u_mask])
+            DTM_unc_dex[i] += np.log10((temp_gas + 1) / temp_gas)
+            DGR_unc_dex[i] += np.log10((temp_gas + 1) / temp_gas)
+        DTM_unc_mtp = 10**DTM_unc_dex
+        DGR_unc_mtp = 10**DGR_unc_dex
+        #
+        DTM_16 /= DTM_unc_mtp
+        DTM_84 *= DTM_unc_mtp
+        DGR_16 /= DGR_unc_mtp
+        DGR_84 *= DGR_unc_mtp
+        #
+        # My linear fitting
+        #
+        print(method_abbr)
+        xbins2 = (8.715 - 0.027 * rbins2 * self.d[name]['R25'] * 7.4 / GD_dist)
+        DataX = xbins2[n_zeromask]
+        DataY = np.log10(DGR_LExp)
+        yerr = np.zeros_like(DGR_LExp)
+        for yi in range(len(yerr)):
+            yerr[yi] = max(np.log10(DGR_84[yi]) - np.log10(DGR_LExp[yi]),
+                           np.log10(DGR_LExp[yi]) - np.log10(DGR_16[yi]))
+        DGR_full, coef_ = fit_DataY(DataX, DataY, yerr)
+        DGR_full = 10**DGR_full
+        #
+        nanmask = np.isnan(DataY + yerr + DataX)
+        mask = ((yerr / DataY) < 0.3) * ~nanmask
+        popt, pcov = np.polyfit(x=DataX, y=DataY, deg=1, w=1/yerr, cov=True)
+        DataX_R14 = np.linspace(7.7, 8.7)
+        DGR_full_R14 = 10**(DataX_R14 * popt[0] + popt[1])
+        #
+        # Fitting end
+        #
+        df = pd.read_csv("data/Tables/Remy-Ruyer_2014.csv")
+        r_ = (8.715 - df['12+log(O/H)'].values) / 0.027 * GD_dist / 7.4 / \
+            self.d[name]['R25']
+        r__ = np.linspace(np.nanmin(r_), np.nanmax(r_), 50)
+        # log(Z/Z_solar)
+        x__ = (8.715 - 0.027 * r__ * self.d[name]['R25'] * 7.4 / GD_dist -
+               solar_oxygen_bundance)
+        # Oxygen abundance (log)
+        o__ = x__ + solar_oxygen_bundance
+        zl = np.log10(1.81 * np.exp(-18 / 19))
+        zu = np.log10(1.81 * np.exp(-8 / 19))
+        # H2 fraction
+        with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
+            grp = hf['Regrid']
+            heracles = grp['HERACLES'][()]
+        aH2 = np.array([np.nanmean(heracles[self.d[name]['binmap'] == bin_])
+                        for bin_ in self.d[name]['binlist']])
+        rH2, H2frac = self.simple_profile(aH2 / self.d[name]['aGas'],
+                                          self.d[name]['aRadius'],
+                                          self.rbin,
+                                          self.d[name]['aGas'])
+        funcH2 = interp1d(H2frac[:10], rH2[:10])
+        oH204 = 8.715 - 0.027 * funcH2(0.4) * self.d[name]['R25'] * 7.4 / \
+            GD_dist
+        oH202 = 8.715 - 0.027 * funcH2(0.2) * self.d[name]['R25'] * 7.4 / \
+            GD_dist
+        oH2005 = 8.715 - 0.027 * funcH2(0.05) * self.d[name]['R25'] * 7.4 / \
+            GD_dist
+        #
+        # My own fitting and data points
+        #
+        print(' --Plotting DGR vs. Metallicity...')
+        fig, ax = plt.subplots(ncols=2, figsize=(18, 5))
+        with np.errstate(invalid='ignore'):
+            tempo = (8.715 - 0.027 * self.d[name]['aRadius'] *
+                     self.d[name]['R25'] * 7.4 / GD_dist)
+            tempd = 10**self.d[name][method_abbr]['alogSigmaD'] / \
+                self.d[name]['aGas']
+            tempe_dex = self.d[name][method_abbr]['aSigmaD_err']
+            tempg = self.d[name]['aGas']
+            tempr = self.d[name]['aRadius']
+        nonnanmask = ~np.isnan(tempo + tempd + tempe_dex + tempg + tempr)
+        tempo, tempd, tempe_dex = \
+            tempo[nonnanmask], tempd[nonnanmask], tempe_dex[nonnanmask]
+        tempg, tempr = \
+            tempg[nonnanmask], tempr[nonnanmask]
+        tempe_dex += (0.023 + (0.001 * tempr * self.d[name]['R25'] * 7.4 /
+                               GD_dist)) + np.log10((tempg + 1) / tempg)
+        tempe = 10**tempe_dex
+        yerr = np.array([tempd * (1 - 1 / tempe), tempd * (tempe - 1)])
+        ax[0].errorbar(tempo, tempd, yerr=yerr, alpha=0.3, ms=1, fmt='o',
+                       elinewidth=0.5, color='Gray', label='Raw results')
+        ax[0].errorbar(xbins2[n_zeromask], DGR_LExp,
+                       yerr=[DGR_LExp - DGR_16, DGR_84 - DGR_LExp],
+                       ms=10, fmt='o', capsize=4, color='#FF7433',
+                       elinewidth=2, label='Metal-binned')
+        xlim = ax[0].get_xlim()
+        ax[0].plot(xbins2[n_zeromask], DGR_full, '-.',
+                   label='Best fit', linewidth=3.0)
+        xlim_tight = [np.nanmin(xbins2), np.nanmax(xbins2)]
+        ylim = [3E-5, 6E-2]
+        ax[0].set_xlabel('12 + log(O/H)', size=16)
+        ax[0].set_yscale('log')
+        ax[0].set_ylabel('DGR', size=16)
+        ax[0].set_xlim(xlim)
+        ax[0].set_ylim(ylim)
+        ax[0].legend(fontsize=16, framealpha=1.0, loc=4)
+        # ax[0].set_title(titles[0], size=16, x=0.1, y=0.85)
+        #
+        ax[1].errorbar(xbins2[n_zeromask], DGR_LExp,
+                       yerr=[DGR_LExp - DGR_16, DGR_84 - DGR_LExp],
+                       ms=10, fmt='o', capsize=4, color='#FF7433',
+                       elinewidth=2, alpha=0.4)
+        ax[1].plot(DataX_R14, DGR_full_R14, '-.', alpha=0.8,
+                   label='C18', linewidth=3.0)
+        ax[1].plot(o__, 10**(2.02 * x__ - 2.21), '--', linewidth=3.0,
+                   label='R14', color='green')
+        ax[1].plot(o__, self.BPL_DGR(x__, 'Z'), ':', linewidth=3.0,
+                   label='R14 (BP)', color='#CE1733')
+        ax[1].plot(o__, 10**(2.45 * o__ - 23.30), linewidth=3.0,
+                   label='V19', color='#17CEC5')
+        ax[1].set_yscale('log')
+        ax[1].set_ylabel('DGR', size=16)
+        ax[1].set_xlim([np.nanmin(df['12+log(O/H)']),
+                        np.nanmax(df['12+log(O/H)'])])
+        ax[1].set_ylim(ylim)
+        ax[1].set_xlim(xlim)
+        ax[1].legend(fontsize=16, framealpha=0.5)
+        ax[1].set_xlabel('12 + log(O/H)', size=16)
+
+        fn = 'output/_DGR_C18R14_DUS2019.png'
+        fig.savefig(fn, bbox_inches='tight')
+        #
+        # Independent D14 plot
+        #
+        print(' --Plotting DTM with D14...')
+        fig, ax = plt.subplots(2, 1, figsize=(5, 8))
+        ax[0].errorbar(xbins2[n_zeromask], DGR_LExp,
+                       yerr=[DGR_LExp - DGR_16, DGR_84 - DGR_LExp],
+                       ms=10, fmt='o', capsize=4, color='#FF7433',
+                       elinewidth=2, alpha=0.4)
+        ax[0].plot(DataX_R14, DGR_full_R14, '-.', alpha=0.8,
+                   label='M101 (C18)', linewidth=3.0)
+        ax[0].fill_between([zl + solar_oxygen_bundance,
+                            zu + solar_oxygen_bundance], 3E-5, 6E-2,
+                           color='green', alpha=0.2)
+        ax[0].fill_between([oH2005, oH202], 3E-5, 6E-2, color='red', alpha=0.2)
+        ax[0].plot(o__[o__ > zl + solar_oxygen_bundance],
+                   10**(x__[o__ > zl + solar_oxygen_bundance]) / 150, 'k',
+                   linewidth=3.0, alpha=1, label='M31 (D14)')
+        ax[0].plot(o__, 10**(x__) / 150, 'k--', linewidth=3.0, alpha=1)
+        ax[0].set_yscale('log')
+        ax[0].set_ylabel('DGR', size=12)
+        ax[0].set_xlim(xlim_tight)
+        ax[0].set_ylim(ylim)
+        ax[0].minorticks_on()
+        ax[0].legend(fontsize=12, framealpha=1.0, loc=4)
+        # ax[0].set_xlabel('12 + log(O/H)', size=12)
+        #
+        fH2s = np.linspace(0.03, 0.9)
+        r25_corr = self.d[name]['R25'] * 7.4 / GD_dist
+        ylim_fH2 = (0.05, 0.7)
+        ax[1].fill_between([zl + solar_oxygen_bundance,
+                            zu + solar_oxygen_bundance],
+                           0.03, 0.2,
+                           color='Grey', alpha=0.8, zorder=4)
+        ax[1].plot(8.715 - 0.027 * funcH2(fH2s) * r25_corr, fH2s,
+                   label=r'M101 f$_{H_2}$ (C18)', linewidth=2)
+        ax[1].fill_between([zl + solar_oxygen_bundance,
+                            zu + solar_oxygen_bundance],
+                           ylim_fH2[0], ylim_fH2[1],
+                           color='green', alpha=0.2,
+                           label='M31 12+log(O/H) range (D14)')
+        ax[1].fill_between([oH2005, oH202], ylim_fH2[0], ylim_fH2[1],
+                           color='red', alpha=0.2,
+                           label=r'M31 f$_{H_2}$ range (D14)')
+        ax[1].plot(xlim_tight, [0.2] * 2, 'k', linestyle='dotted', alpha=0.3)
+        ax[1].plot([zl + solar_oxygen_bundance] * 2, ylim_fH2, 'k',
+                   linestyle='dotted', alpha=0.3)
+        ax[1].text((zl + solar_oxygen_bundance + xlim_tight[1]) / 2,
+                   (ylim[0] + 0.2) / 2, 'D14 Data',
+                   horizontalalignment='center',
+                   verticalalignment='bottom', zorder=5)
+        ax[1].set_xlim(xlim_tight)
+        ax[1].set_ylim(ylim_fH2)
+        ax[1].minorticks_on()
+        ax[1].set_ylabel(r'f$_{H_2}$', size=12)
+        ax[1].set_xlabel('12 + log(O/H)', size=12)
+        ax[1].legend()
+        fn = 'output/_DTM_D14_' + name + '_' + method_abbr + '.pdf'
+        with PdfPages(fn) as pp:
+            pp.savefig(fig, bbox_inches='tight')
+        return
+        #
+        # Independent Jenkins plot
+        #
+        print(' --Plotting DTM with J09...')
+        fig, ax = plt.subplots(figsize=(5, 4))
+        ax.fill_between(xbins2[n_zeromask], DGR_16, DGR_84,
+                        color='lightgray')
+        ax.plot(xbins2[n_zeromask], DGR_LExp, linewidth=2.0, label='This work')
+        fs = [0, 0.36, 1, 1E9]
+        fs_str = ['0.00', '0.36', '1.00', 'inf']
+        for f in range(4):
+            y = self.Jenkins_F_DGR(o__, fs[f])
+            text = r'F$_*$=' + fs_str[f]
+            ax.plot(o__, y, alpha=0.7, linewidth=1.0, color='grey', ls='--')
+            n = 14
+            if f == 2:
+                plt.text(o__[n], y[n], text, color='black', alpha=0.7,
+                         rotation=12.5, size=11)
+            else:
+                plt.text(o__[n], 0.9*y[n], text, color='black', alpha=0.7,
+                         rotation=12.5, size=11)
+        ax.plot([oH204] * 2, [3E-5, 6E-2], label=r'40% H$_2$')
+        ax.annotate(r'f(H$_2$)=0.4', xy=(oH204, 3E-4), xytext=(8.25, 9E-5),
+                    arrowprops=dict(facecolor='black', shrink=0.05, width=1,
+                                    headwidth=5))
+        plt.text(8.52, 0.03, r'f(H$_2$)>0.4', color='black', size=11)
+        plt.text(8.32, 0.03, r'f(H$_2$)<0.4', color='black', size=11)
+        ax.set_yscale('log')
+        ax.set_ylabel('DGR', size=12)
+        ax.set_xlim(xlim_tight)
+        ax.set_ylim(ylim)
+        ax.set_xlabel('12 + log(O/H)', size=12)
+        fig.tight_layout()
+        fn = 'output/_DTM_J09_' + name + '_' + method_abbr + '.pdf'
+        with PdfPages(fn) as pp:
+            pp.savefig(fig, bbox_inches='tight')
+
     def max_possible_DGR(self, O_p_H):
         return 10**(O_p_H - 12) * 16.0 / 1.008 / 0.4953 / 1.36
 
@@ -981,7 +1372,7 @@ class Dust_Plots(object):
         wl_complete = np.linspace(1, 800, 1000)
         wl_plot = np.linspace(51, 549, 100)
         with File('hdf5_MBBDust/Models.h5', 'r') as hf:
-            models = hf[method_abbr].value
+            models = hf[method_abbr][()]
         if method_abbr in ['FBPT']:
             models = \
                 models[self.FBPT_Ts == self.d[name][method_abbr]['aT'][i]][0]
@@ -1779,12 +2170,12 @@ class Dust_Plots(object):
         """
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            sed = grp['HERSCHEL_011111'].value
-            bkgcov = grp['HERSCHEL_011111_BKGCOV'].value
-            diskmask = grp['HERSCHEL_011111_DISKMASK'].value
-            D = grp['DIST_MPC'].value
-            cosINCL = grp['cosINCL'].value
-            dp_radius = grp['RADIUS_KPC'].value
+            sed = grp['HERSCHEL_011111'][()]
+            bkgcov = grp['HERSCHEL_011111_BKGCOV'][()]
+            diskmask = grp['HERSCHEL_011111_DISKMASK'][()]
+            D = grp['DIST_MPC'][()]
+            cosINCL = grp['cosINCL'][()]
+            dp_radius = grp['RADIUS_KPC'][()]
         binmap = np.full_like(diskmask, np.nan, dtype=int)
         print("Start binning " + name + "...")
         noise4snr = np.array([np.sqrt(bkgcov[i, i]) for i in range(nwl)])
@@ -1927,7 +2318,7 @@ class Dust_Plots(object):
                 ax = plt.subplot(grid[1, 3:5])
             method_abbr = method_abbrs[mi]
             with File('hdf5_MBBDust/Models.h5', 'r') as hf:
-                models = hf[method_abbr].value
+                models = hf[method_abbr][()]
             sed = self.d[name]['aSED'][i]
             cov_n1 = self.d[name]['acov_n1'][i]
             unc = np.sqrt(np.linalg.inv(cov_n1).diagonal())
@@ -2164,7 +2555,7 @@ class Dust_Plots(object):
                            galdata_dir='data/gal_data').field('DIST_MPC')[0]
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            heracles = grp['HERACLES'].value
+            heracles = grp['HERACLES'][()]
         min_heracles = np.abs(np.nanmin(heracles))
         heracles[heracles < min_heracles] = np.nan
         aH2 = np.array([np.mean(heracles[self.d[name]['binmap'] == bin_])
@@ -2313,8 +2704,8 @@ class Dust_Plots(object):
                            galdata_dir='data/gal_data').field('DIST_MPC')[0]
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            heracles = grp['HERACLES'].value
-            things = grp['THINGS'].value
+            heracles = grp['HERACLES'][()]
+            things = grp['THINGS'][()]
         min_heracles = np.abs(np.nanmin(heracles))
         heracles[heracles < min_heracles] = np.nan
         aH2 = np.array([np.mean(heracles[self.d[name]['binmap'] == bin_])
@@ -2522,8 +2913,8 @@ class Dust_Plots(object):
                            galdata_dir='data/gal_data').field('DIST_MPC')[0]
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            heracles = grp['HERACLES'].value
-            things = grp['THINGS'].value
+            heracles = grp['HERACLES'][()]
+            things = grp['THINGS'][()]
         min_heracles = np.abs(np.nanmin(heracles))
         heracles[heracles < min_heracles] = np.nan
         aH2 = np.array([np.mean(heracles[self.d[name]['binmap'] == bin_])
@@ -2677,8 +3068,8 @@ class Dust_Plots(object):
                            galdata_dir='data/gal_data').field('DIST_MPC')[0]
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            heracles = grp['HERACLES'].value
-            things = grp['THINGS'].value
+            heracles = grp['HERACLES'][()]
+            things = grp['THINGS'][()]
         temp_s = pd.read_csv('data/Tables/galaxy_data.csv',
                              index_col=0).loc[name]
         alpha_CO = temp_s['ACO']
@@ -2777,7 +3168,7 @@ class Dust_Plots(object):
                       '.h5', 'r') as hf:
                 grp = hf['Fitting_results']
                 subgrp = grp[m]
-                aPDFs = subgrp['PDF'].value
+                aPDFs = subgrp['PDF'][()]
             r = d = w = np.array([])  # radius, dgr, weight
             for i in range(len(self.d[name]['binlist'])):
                 temp_G = self.d[name]['aGas'][i]
@@ -2884,7 +3275,7 @@ class Dust_Plots(object):
             with File('hdf5_MBBDust/0710_beta=' + beta + '_backup/' +
                       'Calibration.h5', 'r') as hf:
                 grp = hf[m]
-                print(beta, grp['kappa160'].value)
+                print(beta, grp['kappa160'][()])
         # with PdfPages(fn) as pp:
         #     pp.savefig(fig, bbox_inches='tight')
 
@@ -2892,7 +3283,7 @@ class Dust_Plots(object):
         binned = self.d[name]['SigmaGas']
         with File('hdf5_MBBDust/' + name + '.h5', 'r') as hf:
             grp = hf['Regrid']
-            unbinned = grp['TOTAL_GAS'].value
+            unbinned = grp['TOTAL_GAS'][()]
             unbinned[np.isnan(binned)] = np.nan
         fig, ax = plt.subplots(ncols=2, figsize=(7, 3))
         im = ax[0].imshow(unbinned, origin='lower', norm=LogNorm(),

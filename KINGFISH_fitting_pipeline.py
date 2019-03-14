@@ -13,9 +13,11 @@ from astropy.coordinates import Angle
 from astropy.wcs import WCS
 
 
-preprocessing = 1
+preprocessing = 0
 fitting = 1
-bkgcov_generating = 1
+bkgcov_generating = 0
+
+fitting_nop = 5
 
 all_objects = 0
 selected_objects = ['IC0342']
@@ -47,7 +49,7 @@ band_char = {'pacs100': ['PACS_100', 'Gauss_15', 15.0],
              'spire350': ['SPIRE_350', 'Gauss_30', 30.0],
              'spire500': ['SPIRE_500', 'Gauss_41', 41.0]}
 bands = list(band_char.keys())
-# bands = bands[:4] 
+# bands = bands[:4]
 
 
 def mp_regrid(o, bands):
@@ -160,8 +162,8 @@ def mp_fit(o, bands):
         observe_fns.append(dpath2 + o + '_' + band + '_bgsub.fits.gz')
     mask_fn = dpath2 + o + '_diskmask.fits.gz'
     #
-    fdd(o, method_abbr='FB', del_model=False,
-        nop=10, beta_f=2.0, Voronoi=False, save_pdfs=False,
+    fdd(o, method_abbr='BE', del_model=False,
+        nop=fitting_nop, beta_f=2.0, Voronoi=False, save_pdfs=False,
         project_name='KINGFISH18', observe_fns=observe_fns,
         mask_fn=mask_fn, subdir='', notes='',
         bands=bands, rand_cube=True, better_bkgcov=None,

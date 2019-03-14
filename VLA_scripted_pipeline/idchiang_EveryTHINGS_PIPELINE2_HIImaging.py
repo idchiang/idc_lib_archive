@@ -60,15 +60,18 @@ print('#\nFinal vis name: ' + final_vis + '\n#\n')
 if target in ['IC342']:
     w = 2.5
     nchan = 128
-elif target in ['NGC3898', 'NGC4501']:
+elif target in ['NGC3898', 'NGC4038', 'NGC4501']:
     w = 2.5
     nchan = 256
 elif target in ['NGC4496A']:
     w = 5.0
     nchan = 64
-elif target in ['NGC2787', 'NGC3227']:
+elif target in ['NGC1961', 'NGC3227', 'NGC7479']:
     w = 5.0
     nchan = 128
+elif target in ['NGC2787']:
+    w = 10.0
+    nchan = 64
 else:
     w = 2.5
     nchan = 128

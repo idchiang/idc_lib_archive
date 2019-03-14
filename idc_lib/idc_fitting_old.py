@@ -7,7 +7,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 import pandas as pd
 import astropy.units as u
 from astropy.constants import c, N_A
-from corner import corner
+# from corner import corner
 from scipy.stats import pearsonr
 # from scipy.stats.stats import pearsonr
 from .idc_voronoi import voronoi_m
@@ -1294,11 +1294,14 @@ def kappa_calibration(method_abbr, beta_f=my_beta_f, lambdac_f=300.0,
                                  9.6 * np.pi)
         hf.close()
     #
+    del samples, labels
+    """
     fig = corner(samples.T, labels=labels, quantities=(0.16, 0.84),
                  show_titles=True, title_kwargs={"fontsize": 12})
     with PdfPages('output/_CALI_' + method_abbr + '_' +
                   mode_titles[cov_mode] + '.pdf') as pp:
         pp.savefig(fig)
+    """
     fig, ax = plt.subplots(figsize=(10, 7.5))
     ax.loglog(wl_complete, model_gordon, label='G14EXP')
     ax.loglog(wl, mode_integrated, 'x', ms=15, label='fitting (int)')
