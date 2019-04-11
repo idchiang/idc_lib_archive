@@ -8,8 +8,8 @@ from idc_lib.idc_fitting_old import kappa_calibration
 os.system('clear')  # on linux / os x
 
 reading = False
-calibrating = True
-fitting = False
+calibrating = False
+fitting = True
 
 nop = 10
 
@@ -28,8 +28,8 @@ crop_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
 save_surveys = ['THINGS', 'HERACLES', 'HERSCHEL_011111', 'HERSCHEL_001111',
                 'RADIUS_KPC', 'SFR', 'SMSD', 'TOTAL_GAS', 'DIST_MPC', 'PA_RAD',
                 'cosINCL', 'R25_KPC', 'SPIRE_500_PS']
-all_methods = ['SE', 'FB', 'BE', 'WD', 'PL']
-method_cali = ['PL']
+all_methods = ['BE']
+method_cali = ['BE']
 method_f = all_methods
 
 if reading:
@@ -50,7 +50,7 @@ if calibrating:
     for method_abbr in method_cali:
         quiet = False if method_abbr == 'PL' else True
         cov_mode = 5
-        for beta in [1.8]:
+        for beta in [2.0]:
             kappa_calibration(method_abbr, cov_mode=cov_mode, nop=nop,
                               quiet=quiet, beta_f=beta)
 

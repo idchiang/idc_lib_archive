@@ -14,11 +14,11 @@ from astropy.wcs import WCS
 
 
 preprocessing = 1
-fitting = 1
-bkgcov_generating = 1
+fitting = 0
+bkgcov_generating = 0
 
 all_objects = 0
-selected_objects = ['ic10']
+selected_objects = ['eso194-022']
 
 os.system('clear')  # on linux / os x
 project_name = 'z0mgs_Herschel'
@@ -36,12 +36,15 @@ band_char = {'pacs100': ['PACS_100', 'Gauss_15', 15.0, np.nan],
              'spire250': ['SPIRE_250', 'Gauss_30', 30.0, 469.35],
              'spire350': ['SPIRE_350', 'Gauss_30', 30.0, 831.27],
              'spire500': ['SPIRE_500', 'Gauss_41', 41.0, 1804.31]}
-bands = list(band_char.keys())
+# bands = list(band_char.keys())
+bands = ['pacs100']
 
 
 def mp_regrid(o, bands):
     nbands = len(bands)
     tfn = dpath + o + '_scanamorphos_v25_' + bands[nbands - 1] + '_0.fits.gz'
+    if not os.path.isfile(tfn):
+        tfn = dpath + o + '_scanamorphos_v25_' + bands[nbands - 1] + '_0.fits'
     tdata, thdr = fits.getdata(tfn, header=True)
     tdata = tdata[0]
     #
@@ -77,8 +80,9 @@ def mp_regrid(o, bands):
         # 0. Load data
         #
         print('\n##', job_name + ': Load image')
-        fn = dpath + o + '_scanamorphos_v25_' + band + \
-            '_0.fits.gz'
+        fn = dpath + o + '_scanamorphos_v25_' + band + '_0.fits.gz'
+        if not os.path.isfile(fn):
+            fn = dpath + o + '_scanamorphos_v25_' + band + '_0.fits'
         print('file name:', fn)
         data, hdr = fits.getdata(fn, header=True)
         data = data[0]
@@ -108,7 +112,9 @@ def mp_regrid(o, bands):
         shape = data.shape
         w = WCS(hdr, naxis=2)
         # 2-1. Generate radius map (in arcsec or deg)
-        radius_map = idcio.radius_arcsec(shape, w, ra, dec, posang, incl)
+        radius_map = idcio.radius_arcsec(shape, w, ra, dec, posang, incl,
+                                         large_incl_correction=True,
+                                         cosINCL_limit=0.1)
         # 2-2. Create mask with radius map and r25.
         diskmask = radius_map < (3.0 * r25)
         #

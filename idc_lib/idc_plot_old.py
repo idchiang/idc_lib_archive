@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 import seaborn as sns
-from corner import corner
+# from corner import corner
 from .idc_corner import corner_m
 from scipy import stats
 from scipy.interpolate import interp1d
@@ -1107,7 +1107,7 @@ class Dust_Plots(object):
         ax[0].legend(fontsize=12, framealpha=1.0, loc=4)
         # ax[0].set_xlabel('12 + log(O/H)', size=12)
         #
-        fH2s = np.linspace(0.03, 0.9)
+        fH2s = np.linspace(0.03, 0.8)
         r25_corr = self.d[name]['R25'] * 7.4 / GD_dist
         ylim_fH2 = (0.05, 0.7)
         ax[1].fill_between([zl + solar_oxygen_bundance,
@@ -1542,7 +1542,8 @@ class Dust_Plots(object):
         with PdfPages(fn) as pp:
             pp.savefig(fig, bbox_inches='tight')
 
-    def corner_plots(self, name, method_abbr):
+    """
+    def corner_plots(self, name, method_abbr):  # no corner anymore
         plt.close('all')
         with np.errstate(invalid='ignore'):
             pacs100 = np.log10(self.d[name]['aSED'][:, 0])
@@ -1577,6 +1578,7 @@ class Dust_Plots(object):
             labels = [r'$\log(\Sigma_d)$', r'$\alpha$', r'$\log(\gamma)$',
                       r'$\log(U)_{min}$']
         mask2 = np.sum(~np.isnan(samples), axis=0).astype(bool)
+        
         fig = corner(samples.T[mask2], labels=labels, quantities=(0.16, 0.84),
                      show_titles=True, title_kwargs={"fontsize": 16},
                      label_kwargs={"fontsize": 16})
@@ -1586,6 +1588,7 @@ class Dust_Plots(object):
             fn = 'output/_Corner_' + name + '_' + method_abbr + '.pdf'
         with PdfPages(fn) as pp:
             pp.savefig(fig, bbox_inches='tight')
+    """
 
     def simple_profile(self, data, radius, bins, gas=None, gas_weighted=True):
         gas = np.ones(data.shape) if not (gas_weighted or gas) else gas

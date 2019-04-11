@@ -1,3 +1,4 @@
+import os
 from time import clock, ctime
 from h5py import File
 import multiprocessing as mp
@@ -6,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 import pandas as pd
 import astropy.units as u
+from astropy.io import fits
 from astropy.constants import c, N_A
 # from corner import corner
 from scipy.stats import pearsonr
@@ -53,6 +55,10 @@ FWHM = {'SPIRE_500': 36.09, 'SPIRE_350': 24.88, 'SPIRE_250': 18.15,
         'Gauss_25': 25, 'PACS_160': 11.18, 'PACS_100': 7.04,
         'HERACLES': 13}
 fwhm_sp500 = FWHM['SPIRE_500'] * u.arcsec.to(u.rad)  # in rad
+
+band_instr = {'pacs70': 'pacs', 'pacs100': 'pacs', 'pacs160': 'pacs',
+              'spire250': 'spire', 'spire350': 'spire', 'spire500': 'spire',
+              'mips24': 'mips', 'mips70': 'mips', 'mips160': 'mips'}
 
 # Calibration error of PACS_100, PACS_160, SPIRE_250, SPIRE_350, SPIRE_500
 # For extended source
@@ -184,17 +190,18 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
     Should have unique names for all the methods I am currently using:
         EF, FB, BE, WD, PL
     """
+    cfn = 'hdf5_MBBDust/Calibration_' + str(round(beta_f, 2)) + '.h5'
     try:
-        with File('hdf5_MBBDust/Calibration.h5', 'r') as hf:
+        with File(cfn, 'r') as hf:
             grp = hf[method_abbr]
-            kappa160 = grp['kappa160'].value
+            # kappa160 = grp['kappa160'].value
     except KeyError:
         print('This method is not calibrated yet!! Starting calibration...')
         kappa_calibration(method_abbr, beta_f=beta_f, lambda_c_f=lambda_c_f,
                           nop=nop)
-        with File('hdf5_MBBDust/Calibration.h5', 'r') as hf:
+        with File(cfn, 'r') as hf:
             grp = hf[method_abbr]
-            kappa160 = grp['kappa160'].value
+            # kappa160 = grp['kappa160'].value
     if cov_mode is None:
         print('COV mode? (1 for COV, 0 for non-COV)')
         cov_mode = bool(int(input()))
@@ -501,6 +508,42 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
             Teffs = MWT * Ubar**(1 / 6.)
             del Ubar
     #
+    bands = ['pacs100', 'pacs160', 'spire250', 'spire350', 'spire500']
+    # lambdac_f = 300
+    models = []
+    if del_model:
+        for b in bands:
+            fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
+                str(round(beta_f, 2)) + '.fits.gz'
+            if os.path.isfile(fn):
+                os.remove(fn)
+    for b in bands:
+        fn = 'models/' + b + '_' + method_abbr + '.beta=' + \
+            str(round(beta_f, 2)) + '.fits.gz'
+        if not os.path.isfile(fn):
+            if method_abbr in ['SE']:
+                filelist = os.listdir('models')
+                new_fn = ''
+                for f in filelist:
+                    temp = f.split('_')
+                    if len(temp) > 1:
+                        if (temp[0] == b) and (temp[1][:2] == method_abbr):
+                            new_fn = f
+                            break
+                if new_fn == '':
+                    pass
+                    # models_creation(method_abbr, beta_f, lambdac_f,
+                    #                 band_instr[b], kappa160, nop)
+                else:
+                    fn = new_fn
+            else:
+                pass
+                # models_creation(method_abbr, beta_f, lambdac_f,
+                #                 band_instr[b], kappa160, nop)
+        models.append(fits.getdata(fn))
+    models = np.array(models)
+    models = np.moveaxis(models, 0, -1)
+    """
     if del_model:
         with File('hdf5_MBBDust/Models.h5', 'a') as hf:
             try:
@@ -600,7 +643,8 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
                     np.sum(rsps[i] * _wl / wl[i])
             del _wl, rsps, h_models, range_
             print("   --Done. Elapsed time:", round(clock()-ttic, 3), "s.\n")
-        """
+    """
+    """
         # version before parallel computing
         models_ = np.zeros(list(logsigmas.shape) + [5])
         # Applying RSRFs to generate fake-observed models
@@ -672,9 +716,11 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
                 np.sum(spire_models * spires[i], axis=-1) / \
                 np.sum(spires[i] * spire_wl / wl[i])
         del spire_wl, spires, spire_models
-        """
+    """
+    """
         with File('hdf5_MBBDust/Models.h5', 'a') as hf:
             hf[method_abbr] = models_
+    """
     """
     Start fitting
     """
@@ -697,8 +743,9 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
         logsigmas = logsigmas[betas_1d == betas_1d[0]][0]
         Ts = Ts[betas_1d == betas_1d[0]][0]
     else:
-        models = models_
-        del models_
+        pass
+        # models = models_
+        # del models_
     for i in range(len(binlist)):
         if (i + 1) / len(binlist) > progress:
             print(' --Step', (i + 1), '/', str(len(binlist)) + '.',
@@ -706,9 +753,11 @@ def fit_dust_density(name='NGC5457', cov_mode=True, beta_f=my_beta_f,
             progress += 0.1
         """ Binning everything """
         if method_abbr in ['FBPT']:
-            models = models_[Ts_1d == t_pred[i]][0]
+            pass
+            # models = models_[Ts_1d == t_pred[i]][0]
         elif method_abbr in ['PB']:
-            models = models_[betas_1d == beta_pred[i]][0]
+            pass
+            # models = models_[betas_1d == beta_pred[i]][0]
         temp_matrix = np.empty_like(models)
         bin_ = (binmap == binlist[i])
         if cov_mode:
